@@ -7,6 +7,8 @@ python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements.txt
 .venv\Scripts\python -m radar check-sources   # Open-Meteo répond ?
 .venv\Scripts\python -m radar v0              # météo + score + web/index.html
+.venv\Scripts\python -m radar fetch           # sources de terrain (~300 Mo, intégrité contrôlée)
+.venv\Scripts\python -m radar terrain         # grille terrain 250 m -> data/processed
 .venv\Scripts\python -m pytest                # tests (sans réseau)
 ```
 

@@ -107,6 +107,14 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_terrain(args: argparse.Namespace) -> int:
+    from radar import terrain
+
+    print(terrain.run(load_config(args.config)))
+    print("\nSorties : data/processed/terrain_250m.npz, terrain_meta.json, terrain_report.txt")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="radar")
     ap.add_argument("--config", default=None, help="chemin d'un config.yaml alternatif")
@@ -119,6 +127,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("fetch", help="télécharger les sources de terrain vérifiées (config/sources.yaml)")
     p.add_argument("--only", default=None, help="liste de sources séparées par des virgules")
     p.set_defaults(func=cmd_fetch)
+    p = sub.add_parser("terrain", help="prétraitement terrain -> grille 250 m (data/processed)")
+    p.set_defaults(func=cmd_terrain)
     p = sub.add_parser("compare-models", help="comparer des modèles météo sur une zone test")
     p.add_argument("--models", default="best_match,meteofrance_arome_france_hd")
     p.add_argument("--center", default="43.9667,3.8500", help="lat,lon (défaut : Saint-Hippolyte-du-Fort)")

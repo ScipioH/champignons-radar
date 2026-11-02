@@ -1,0 +1,112 @@
+# Reclassement du terrain (phase 2a). Construit à partir de l'audit des données réelles du 2026-11-02
+# (tools/audit_terrain.py) : ne pas modifier sans ré-auditer.
+
+fine_m: 50                 # résolution de travail (rasterisation, pente) ; agrégée en cellules de terrain.spacing_m
+sea_max_alt_m: 1.0         # cellule sans couverture géologique ET altitude <= seuil -> mer (écartée)
+
+forest:
+  # Classes (ordre = code stocké). Index 0 = absence de polygone BD Forêt dans la zone couverte.
+  classes:
+    - hors_foret
+    - chataignier
+    - hetre
+    - chene_vert
+    - chene_decidu
+    - robinier
+    - feuillu_autre
+    - feuillus_melanges      # essence feuillue non précisée (forêt fermée)
+    - feuillus_ouverts       # FO1 : forêt ouverte de feuillus, essence non précisée
+    - pin_alep
+    - pin_maritime
+    - pin_sylvestre
+    - pin_noir_laricio
+    - pins_melanges
+    - pin_autre
+    - pin_montagne
+    - douglas
+    - sapin_epicea
+    - meleze
+    - coniferes_melanges     # conifère non précisé (forêt fermée)
+    - coniferes_ouverts      # FO2
+    - mixte_feuillus_dom     # FF31
+    - mixte_coniferes_dom    # FF32
+    - mixte_ouvert           # FO3
+    - peupleraie
+    - sans_couvert           # FF0 / FO0 : coupe rase, incendie, jeune peuplement
+    - lande                  # LA4 (dont garrigue)
+    - herbace                # LA6
+    - inconnu                # CODE_TFV non prévu ici (signalé dans le rapport)
+  # CODE_TFV (BD Forêt V2) -> classe. Codes constatés dans les départements 30 et 34.
+  code_tfv:
+    FF1-10-10: chataignier
+    FF1-09-09: hetre
+    FF1G06-06: chene_vert
+    FF1G01-01: chene_decidu
+    FF1-14-14: robinier
+    FF1-49-49: feuillu_autre
+    FF1-00: feuillus_melanges
+    FF1-00-00: feuillus_melanges
+    FO1: feuillus_ouverts
+    FF2-57-57: pin_alep
+    FF2-51-51: pin_maritime
+    FF2-52-52: pin_sylvestre
+    FF2G53-53: pin_noir_laricio
+    FF2-80-80: pins_melanges
+    FF2-81-81: pin_autre
+    FF2G58-58: pin_montagne
+    FF2-64-64: douglas
+    FF2G61-61: sapin_epicea
+    FF2-63-63: meleze
+    FF2-00: coniferes_melanges
+    FF2-00-00: coniferes_melanges
+    FF2-90-90: coniferes_melanges
+    FF2-91-91: coniferes_melanges
+    FO2: coniferes_ouverts
+    FF31: mixte_feuillus_dom
+    FF32: mixte_coniferes_dom
+    FO3: mixte_ouvert
+    FP: peupleraie
+    FF0: sans_couvert
+    FO0: sans_couvert
+    LA4: lande
+    LA6: herbace
+
+geology:
+  classes: [acide, calcaire, detritique, basique, superficiel, eau, anthropique, autre]
+  # 1) Règles sur NOTATION (conventions BRGM), prioritaires : dépôts superficiels, eau, remblais.
+  #    Majuscules = formations superficielles (F* alluvions, C colluvions, E éboulis, R résiduelles...),
+  #    à ne pas confondre avec les étages en minuscules (e = Éocène, c = Crétacé...).
+  notation:
+    - {pattern: '^hydro', class: eau}
+    - {pattern: '^X', class: anthropique}
+    - {pattern: '^F[a-zA-Z0-9]', class: superficiel}
+    - {pattern: '^(C|E|R|RC|H|OE|J)([^a-z]|$)', class: superficiel}   # J = cônes de déjection
+  # 2) Sinon : mot-clé apparaissant LE PLUS TÔT dans DESCR (la lithologie dominante est citée en premier
+  #    dans les notices BRGM). Comparaison sans accents ni majuscules, sur début de mot.
+  keywords:
+    eau: ["lac", "etang", "cours d'eau", "plan d'eau"]
+    anthropique: ["anthropique", "remblai"]
+    superficiel: ["alluvion", "colluvion", "eboulis", "terrasse", "loess", "limon", "formations residuelles", "epandage", "cone de dejection", "cones detritiques", "dune", "cordon", "galet", "cailloutis", "vase"]
+    basique: ["basalt", "volcan", "dolerite", "gabbro", "intrusions basiques", "coulee", "porphyre", "andesit"]
+    acide: ["granit", "microgranit", "leucogranit", "gneiss", "orthogneiss", "paragneiss", "migmatit", "schiste", "micaschiste", "kinzigite", "quartzite", "rhyolit", "pegmatit", "aplite", "filon de quartz", "filons de quartz", "granodiorit", "phyllade", "corneenne", "lydienne", "leptynite", "amphibolite"]
+    # 'breche' -> calcaire : hypothèse RÉGIONALE (brèches des Matelles, vitrollienne, messinienne = surtout calcaires)
+    calcaire: ["calcaire", "calcarenite", "dolomi", "marne", "marno", "craie", "cargneule", "travertin", "calcschiste", "entroquite", "oncholithe", "breche"]
+    detritique: ["gres", "conglomer", "argile", "argilite", "sable", "molasse", "pelite", "silt", "poudingue", "bauxite", "gypse", "houille"]
+  # 3) Ajustement par âge : les grès/pélites PALÉOZOÏQUES (socle cévenol, Montagne Noire) donnent des sols
+  #    acides, contrairement aux détritiques tertiaires souvent calcaires. Permien exclu (pélites rouges de
+  #    Lodève, plutôt neutres) : choix prudent, à revoir avec le journal.
+  age_override:
+    from: [detritique]
+    to: acide
+    if_any: ["precambrien", "cambrien", "cambro", "ordovicien", "silurien", "devonien", "carbonifere", "stephanien", "westphalien", "visean", "namurien"]
+
+# Points de contrôle (sanity check du rapport, pas des tests) : bilan dans un rayon de checkpoint_radius_m
+# (un centre de village tombe en fond de vallée urbanisé : une cellule seule est trompeuse).
+# Les attentes du plan initial ont été en partie démenties par la carte géologique (cf. PLAN.md, constats 2a).
+checkpoint_radius_m: 3000
+checkpoints:
+  - {name: "Sumène", lat: 43.981, lon: 3.717, attente: "socle cévenol (schistes/grès anciens) + châtaignier présent"}
+  - {name: "Monoblet", lat: 44.000, lon: 3.890, attente: "plan initial : schiste ; carte BRGM : dolomies/calcaires du Lias-Jurassique"}
+  - {name: "Saint-Hippolyte-du-Fort (nord)", lat: 43.985, lon: 3.856, attente: "plan initial : schiste ; carte BRGM : calcaire"}
+  - {name: "Massif de la Gardiole", lat: 43.490, lon: 3.770, attente: "garrigue, chêne vert, pin d'Alep, calcaire"}
+  - {name: "Montpellier centre", lat: 43.611, lon: 3.877, attente: "hors forêt (urbain)"}

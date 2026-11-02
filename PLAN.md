@@ -153,12 +153,13 @@ Plan de validation : pour chaque station de la zone avec RR/TN renseignés, comp
 
 - [x] Plan révisé
 - [x] Phase 1 — V0 : 20 tests verts (critères a–e), run réel du 2026-11-02 OK (437 points, 281 terrestres scorés), carte `web/index.html`
-- [~] Phase 2a — terrain : **sources vérifiées, téléchargées et auditées** (cf. `SOURCES.md`, constats ci-dessous) ; **reste à faire** : prétraitement (reclassement essences + géologie, altitude/pente/exposition, grille 250 m, masque mer/eau) ← **prochaine étape**
-- [ ] Phase 2b / 2c
+- [x] Phase 2a — terrain : sources vérifiées/téléchargées/auditées (`SOURCES.md`) ; prétraitement `python -m radar terrain` (19 s) → 124 172 cellules de 250 m (`data/processed/terrain_250m.npz` + `terrain_meta.json` + `terrain_report.txt`) ; 61 tests verts dont une chaîne complète sur fichiers synthétiques
+- [ ] Phase 2b — habitat (`species.yaml`, score habitat, score final) ← **prochaine étape**
+- [ ] Phase 2c — trajet
 - [ ] Phase 3
 - [ ] Phase 4
 
-**Commandes :** `python -m radar v0` · `python -m radar check-sources` · `.venv\Scripts\python -m pytest`
+**Commandes :** `python -m radar v0` · `python -m radar check-sources` · `python -m radar fetch` · `python -m radar terrain` · `.venv\Scripts\python -m pytest`
 
 **Constats du run V0 (2026-11-02) :**
 - 93 % des points sont « bon » ou « très bon » : la météo est quasi uniforme sur la zone (même épisode pluvieux ~19-20/10, délai 13-14 j). La V0 ne discrimine donc presque pas ; c'est attendu, la discrimination viendra de l'habitat (2b).
@@ -171,8 +172,11 @@ Plan de validation : pour chaque station de la zone avec RR/TN renseignés, comp
 
 **Constats 2a (audit des données réelles, 2026-11-02)** — à prendre en compte dans 2b :
 - **BD Forêt** : 25 374 (Gard) + 43 908 (Hérault) polygones, champs `CODE_TFV`, `TFV`, `TFV_G11`, `ESSENCE`. La part « essence précise » est faible : ESSENCE = *Feuillus* (21 227, générique), *NC* non classé (14 370) + *NR* (1 640), *Mixte* (13 493), *Conifères* (4 185) ; nommées : chênes sempervirents 3 703, pin d'Alep 2 160, chênes décidus 2 138, châtaignier 1 577, pin laricio/noir 929, hêtre 768, pin maritime 630, pins mélangés 577, douglas 575, sapin/épicéa 574, pin sylvestre 197. **Pas de pin parasol distinct.** Le champ `TFV` (37 valeurs) est parfois plus précis que `ESSENCE`.
-  → Conséquences : (1) NC/NR/Feuillus/Mixte = *essence inconnue*, **pas** « essence défavorable » : ils reçoivent un score d'habitat intermédiaire explicite (prior), jamais 0 ; (2) le seuil minimal « sans essence adéquate, score 0 » du plan initial est **abandonné** pour ces classes ; (3) 13 202 polygones « Lande » (garrigue) et herbacés : habitat nul pour les familles forestières.
+  → **Rectification (2026-11-03, tableau croisé ESSENCE × TFV_G11)** : *NC* n'est **pas** une essence inconnue : NC = exclusivement Lande (LA4, 13 202) et Formation herbacée (LA6, 1 168) ; *NR* = forêt sans couvert arboré (FF0/FO0 : coupe rase, incendie, jeune peuplement). Les essences réellement *non précisées* sont « Feuillus » (FF1-00, FF1-00-00, FO1, FF1-49-49), « Conifères » génériques et « Mixte » (FF31/FF32/FO3). Le reclassement se fait donc sur **`CODE_TFV`** (29 classes, `config/terrain.yaml`), pas sur `ESSENCE`.
+  → Conséquences pour 2b : (1) feuillus/conifères/mixtes non précisés = *essence inconnue* → score d'habitat intermédiaire explicite (prior), jamais 0 ; le seuil « sans essence adéquate, score 0 » du plan initial ne s'applique qu'aux essences **connues et défavorables** ; (2) landes/herbacés/hors forêt : habitat nul pour les familles forestières ; (3) cellules **hors couverture** (départements ≠ 30/34, 3 686 cellules) = habitat inconnu, à afficher comme tel.
 - **Géologie BD Charm-50** : S_FGEOL = 20 139 (34) + 11 145 (30) polygones, **867 formations** en texte libre (`NOTATION`, `DESCR`). Reclassement par mots-clés (schiste/micaschiste/gneiss/granite → acide ; calcaire/dolomie/marne → calcaire ; alluvions/colluvions ; basalte ; hydro) avec **rapport de couverture** (part de surface classée vs « autre ») : on ne dira pas « sol acide » pour ce qu'on n'a pas classé.
+- **Résultat du reclassement géologique (2026-11-03)** : calcaire 44 %, superficiel 32 %, détritique 14 %, acide 7 %, eau 2 %, basique 1 %, non classé **< 0,1 %** (1,7 km²). Règles : NOTATION (conventions BRGM) > mot-clé cité en premier dans DESCR > ajustement d'âge (grès/pélites **paléozoïques** → acide ; Permien exclu). Hypothèse régionale assumée : brèches → calcaire. Diagnostic qui a mené à ces règles : grès cambro-ordoviciens de Sumène d'abord classés « détritique » avec les molasses tertiaires (sol acide vs souvent calcaire), mots composés (« microgranites ») non détectés.
+- **⚠️ Le plan initial est en partie démenti par les données** : Monoblet et le nord de Saint-Hippolyte-du-Fort sont sur **dolomies/calcaires du Lias-Jurassique** (78–86 % calcaire dans un rayon de 3 km), côté calcaire de la faille des Cévennes, pas sur schiste. Châtaignier dans 3 km : Sumène 15 % (socle acide 52 % : conforme), Saint-Hippolyte 5 %, Monoblet ≈ 0. → La « Définition de fini » de 2b est **à réécrire** : au lieu de « châtaigneraies sur schiste à Saint-Hippolyte, Sumène, Monoblet », un critère vérifiable sur les données (ex. les meilleures cellules « cèpes » se concentrent sur socle acide + châtaignier/chêne/hêtre ; Gardiole et garrigues ressortent pour la famille pins, pas pour les cèpes).
 - **Encodages** : BD Forêt UTF-8 strict (apostrophe en U+0092 à normaliser) ; géologie cp1252. Projection source Lambert 93 (EPSG:2154) pour les deux.
 - **MNT** : Copernicus GLO-30 (30 m, DSM) retenu plutôt que RGE ALTI (paquets départementaux très lourds) ; suffisant pour altitude/exposition à 250 m, pas pour des pentes fines (voir `SOURCES.md`).
 - **Réserves** : BD Forêt date de 2018 (incendies/coupes postérieurs invisibles) ; miroir BRGM tiers faute d'accès officiel (403).

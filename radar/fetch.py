@@ -96,6 +96,37 @@ def download(name: str, spec: dict, raw_dir: Path, opener=urllib.request.urlopen
     return "telecharge"
 
 
+def extract_all(raw_dir: Path) -> list[Path]:
+    """Extrait chaque archive .7z/.zip de raw_dir dans raw_dir/extracted/<nom>/ (une fois).
+
+    Archives = données non fiables : zipfile et py7zr refusent les chemins sortant du dossier cible.
+    """
+    import zipfile
+
+    done = []
+    out = raw_dir / "extracted"
+    for arc in sorted(raw_dir.rglob("*")):
+        if arc.suffix not in (".7z", ".zip") or "extracted" in arc.parts:
+            continue
+        dest = out / arc.stem
+        if dest.exists():
+            continue
+        tmp = dest.with_name(dest.name + ".tmp")
+        tmp.mkdir(parents=True, exist_ok=True)
+        if arc.suffix == ".7z":
+            import py7zr
+
+            with py7zr.SevenZipFile(arc) as z:
+                z.extractall(tmp)
+        else:
+            with zipfile.ZipFile(arc) as z:
+                z.extractall(tmp)
+        tmp.replace(dest)  # dossier complet ou rien : une extraction interrompue est refaite
+        done.append(dest)
+        log.info("extrait %s", arc.name)
+    return done
+
+
 def fetch_all(only: list[str] | None = None, raw_dir: Path | None = None, sources: dict | None = None,
               opener=urllib.request.urlopen) -> dict[str, str]:
     raw_dir = raw_dir or resolve("data/raw")
