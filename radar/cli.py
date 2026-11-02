@@ -98,6 +98,15 @@ def cmd_compare_models(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fetch(args: argparse.Namespace) -> int:
+    from radar import fetch
+
+    res = fetch.fetch_all(only=args.only.split(",") if args.only else None)
+    for name, status in res.items():
+        print(f"{name}: {status}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="radar")
     ap.add_argument("--config", default=None, help="chemin d'un config.yaml alternatif")
@@ -107,6 +116,9 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(func=cmd_v0)
     p = sub.add_parser("check-sources", help="vérifier que les sources externes répondent")
     p.set_defaults(func=cmd_check_sources)
+    p = sub.add_parser("fetch", help="télécharger les sources de terrain vérifiées (config/sources.yaml)")
+    p.add_argument("--only", default=None, help="liste de sources séparées par des virgules")
+    p.set_defaults(func=cmd_fetch)
     p = sub.add_parser("compare-models", help="comparer des modèles météo sur une zone test")
     p.add_argument("--models", default="best_match,meteofrance_arome_france_hd")
     p.add_argument("--center", default="43.9667,3.8500", help="lat,lon (défaut : Saint-Hippolyte-du-Fort)")

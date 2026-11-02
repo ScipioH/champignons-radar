@@ -1,0 +1,40 @@
+# Registre des sources de terrain. Chaque entrée a été vérifiée le 2026-11-02 (voir SOURCES.md).
+# size / md5 : valeurs publiées par le fournisseur, contrôlées après téléchargement.
+# sha256 est calculé et enregistré dans data/raw/CHECKSUMS.json (détection de dérive ultérieure).
+
+bdforet_d034:
+  url: https://data.geopf.fr/telechargement/download/BDFORET/BDFORET_2-0__SHP_LAMB93_D034_2018-01-15/BDFORET_2-0__SHP_LAMB93_D034_2018-01-15.7z
+  dest: bdforet/BDFORET_2-0_D034_2018-01-15.7z
+  size: 63167344
+  md5: b15bc41b8af8850827f88dcfa810783c
+bdforet_d030:
+  url: https://data.geopf.fr/telechargement/download/BDFORET/BDFORET_2-0__SHP_LAMB93_D030_2018-11-20/BDFORET_2-0__SHP_LAMB93_D030_2018-11-20.7z
+  dest: bdforet/BDFORET_2-0_D030_2018-11-20.7z
+  size: 33278307
+  md5: 91358d74d2534916283afbf3ef08e5de
+
+charm50_d034:
+  url: https://data.cquest.org/brgm/bd_charm_50/2019/GEO050K_HARM_034.zip
+  dest: geologie/GEO050K_HARM_034.zip
+  size: 31279763
+charm50_d030:
+  url: https://data.cquest.org/brgm/bd_charm_50/2019/GEO050K_HARM_030.zip
+  dest: geologie/GEO050K_HARM_030.zip
+  size: 22584809
+
+dem_n43_e003:
+  url: https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_N43_00_E003_00_DEM/Copernicus_DSM_COG_10_N43_00_E003_00_DEM.tif
+  dest: dem/Copernicus_DSM_COG_10_N43_00_E003_00_DEM.tif
+  size: 32070160
+dem_n43_e004:
+  url: https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_N43_00_E004_00_DEM/Copernicus_DSM_COG_10_N43_00_E004_00_DEM.tif
+  dest: dem/Copernicus_DSM_COG_10_N43_00_E004_00_DEM.tif
+  size: 27685825
+dem_n44_e003:
+  url: https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_N44_00_E003_00_DEM/Copernicus_DSM_COG_10_N44_00_E003_00_DEM.tif
+  dest: dem/Copernicus_DSM_COG_10_N44_00_E003_00_DEM.tif
+  size: 42221433
+dem_n44_e004:
+  url: https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_N44_00_E004_00_DEM/Copernicus_DSM_COG_10_N44_00_E004_00_DEM.tif
+  dest: dem/Copernicus_DSM_COG_10_N44_00_E004_00_DEM.tif
+  size: 45405284

@@ -153,7 +153,7 @@ Plan de validation : pour chaque station de la zone avec RR/TN renseignés, comp
 
 - [x] Plan révisé
 - [x] Phase 1 — V0 : 20 tests verts (critères a–e), run réel du 2026-11-02 OK (437 points, 281 terrestres scorés), carte `web/index.html`
-- [ ] Phase 2a — terrain (BD Forêt, BRGM, MNT) ← **prochaine étape**
+- [~] Phase 2a — terrain : **sources vérifiées, téléchargées et auditées** (cf. `SOURCES.md`, constats ci-dessous) ; **reste à faire** : prétraitement (reclassement essences + géologie, altitude/pente/exposition, grille 250 m, masque mer/eau) ← **prochaine étape**
 - [ ] Phase 2b / 2c
 - [ ] Phase 3
 - [ ] Phase 4
@@ -167,4 +167,14 @@ Plan de validation : pour chaque station de la zone avec RR/TN renseignés, comp
 - 156 points mer/étang écartés via l'altitude 0 de l'API (approximation ; le masque terrain en 2a remplacera ça). Camargue basse (altitude ~1 m) reste scorée sans masque d'habitat.
 - Pas de `make` sous Windows : remplacé par `python -m radar`.
 
-**Points en attente :** fournisseur SMTP d'envoi (phase 3) ; arbitrage 5 km vs AROME ~2 km (début de 2a). Dépôt public : https://github.com/ScipioH/champignons-radar
+**Décision (2026-11-02) : AROME abandonné**, on reste sur `best_match` à 5 km. La validation sur stations Météo-France (§7bis) reste possible plus tard si on veut requestionner le choix, mais n'est plus sur le chemin critique.
+
+**Constats 2a (audit des données réelles, 2026-11-02)** — à prendre en compte dans 2b :
+- **BD Forêt** : 25 374 (Gard) + 43 908 (Hérault) polygones, champs `CODE_TFV`, `TFV`, `TFV_G11`, `ESSENCE`. La part « essence précise » est faible : ESSENCE = *Feuillus* (21 227, générique), *NC* non classé (14 370) + *NR* (1 640), *Mixte* (13 493), *Conifères* (4 185) ; nommées : chênes sempervirents 3 703, pin d'Alep 2 160, chênes décidus 2 138, châtaignier 1 577, pin laricio/noir 929, hêtre 768, pin maritime 630, pins mélangés 577, douglas 575, sapin/épicéa 574, pin sylvestre 197. **Pas de pin parasol distinct.** Le champ `TFV` (37 valeurs) est parfois plus précis que `ESSENCE`.
+  → Conséquences : (1) NC/NR/Feuillus/Mixte = *essence inconnue*, **pas** « essence défavorable » : ils reçoivent un score d'habitat intermédiaire explicite (prior), jamais 0 ; (2) le seuil minimal « sans essence adéquate, score 0 » du plan initial est **abandonné** pour ces classes ; (3) 13 202 polygones « Lande » (garrigue) et herbacés : habitat nul pour les familles forestières.
+- **Géologie BD Charm-50** : S_FGEOL = 20 139 (34) + 11 145 (30) polygones, **867 formations** en texte libre (`NOTATION`, `DESCR`). Reclassement par mots-clés (schiste/micaschiste/gneiss/granite → acide ; calcaire/dolomie/marne → calcaire ; alluvions/colluvions ; basalte ; hydro) avec **rapport de couverture** (part de surface classée vs « autre ») : on ne dira pas « sol acide » pour ce qu'on n'a pas classé.
+- **Encodages** : BD Forêt UTF-8 strict (apostrophe en U+0092 à normaliser) ; géologie cp1252. Projection source Lambert 93 (EPSG:2154) pour les deux.
+- **MNT** : Copernicus GLO-30 (30 m, DSM) retenu plutôt que RGE ALTI (paquets départementaux très lourds) ; suffisant pour altitude/exposition à 250 m, pas pour des pentes fines (voir `SOURCES.md`).
+- **Réserves** : BD Forêt date de 2018 (incendies/coupes postérieurs invisibles) ; miroir BRGM tiers faute d'accès officiel (403).
+
+Dépôt public : https://github.com/ScipioH/champignons-radar
