@@ -1,0 +1,126 @@
+# Champignons Radar — PLAN (v2, révisé)
+
+Outil local/gratuit qui croise météo, relief, essences forestières et sol pour estimer, dans le temps et l'espace, les meilleures opportunités de **pousse** à ≤ 1 h de Montpellier, et qui envoie un rapport automatique.
+
+> ⚠️ Le score est un **indicateur de probabilité de pousse**, jamais une validation de comestibilité.
+> Tous les seuils sont des **hypothèses non calibrées** tant que le journal de sorties n'a pas ≥ 20 entrées.
+
+Origine : plan initial téléchargé le 2026-11-02 (`champignons-radar-plan.md`), révisé ci-dessous après relecture critique.
+
+---
+
+## 0. Prompt de reprise (à coller dans Claude Code, dans ce dossier)
+
+```
+Tu reprends le projet "champignons-radar". Lis PLAN.md (section 8 = statut) et reprends la
+prochaine étape non cochée. Respecte les contraintes (§1) et la méthode (§2).
+```
+
+## 1. Contraintes
+
+- 100 % local/gratuit, sans base serveur : Python, fichiers (JSON/GeoJSON/Parquet), SQLite (journal), GitHub Pages + Actions plus tard.
+- Un seul point d'entrée : `python -m radar <commande>` (pas de `make` : absent sous Windows). Config unique dans `config/config.yaml`, aucune valeur en dur.
+- Toute modification est décrite et justifiée (message de commit détaillé).
+- Franchise : si une source ne marche pas ou si un score est peu fiable, le dire, ne pas contourner en silence.
+- Aucune donnée personnelle dans le dépôt (tokens en secrets, journal de sorties gitignoré).
+
+## 2. Méthode
+
+- Phase par phase ; on ne passe à la suivante qu'après la « Définition de fini ».
+- Avant tout téléchargement externe : vérifier URL + licence + date, consigner dans `data/raw/SOURCES.md`.
+- Tests sur données simulées uniquement (pas de réseau dans les tests).
+- Un test d'intégration réseau séparé (`python -m radar check-sources`) pour vérifier que les sources répondent.
+
+## 3. Révisions par rapport au plan initial (réponses aux points faibles)
+
+| # | Point faible | Décision |
+|---|---|---|
+| 1 | Score purement multiplicatif : un seul facteur à 0 (ex. une nuit de gel) écrase tout | **Moyenne géométrique pondérée avec plancher** par composante (`floor`), plus **gel = facteur doux** dépendant du nombre de nuits, de leur sévérité et de l'altitude (jamais 0 sec sauf gel sévère) |
+| 2 | Seuils non sourcés, risque de fausse confiance | Chaque seuil est dans la config avec `status: hypothese` ; la carte et le rapport affichent « indice non calibré » tant que le journal < 20 sorties ; le score est présenté en **classes** (faible / moyen / bon / très bon), pas en pourcentage de chance |
+| 3 | Maille V0 de 5 km trop grossière pour la fixture | V0 = classement **relatif** entre zones à 5 km (la météo varie peu à cette échelle) ; ne prétend pas à la précision locale. Précision locale = V1 (500 m, terrain). L'altitude renvoyée par l'API sert déjà au gel |
+| 4 | Phase 2 trop chargée | Scindée en **2a terrain**, **2b habitat**, **2c trajet** |
+| 5 | Sources/licences possiblement périmées | Commande `check-sources` + `SOURCES.md` obligatoire, aucune URL non testée en dur |
+| 6 | Quotas Open-Meteo | Requêtes groupées (≤ 50 points/requête), cache disque par jour, pause entre lots, retry sur 429, limite d'appels journalière en config |
+| 7 | Dépôt public (Pages) expose les zones | Sorties publiées = cellules agrégées (jamais le journal de sorties, jamais de points GPS personnels) ; dépôt privé par défaut, Pages seulement après décision explicite |
+| 8 | « Hérault favorable » trop vague comme critère de fini | Critères **chiffrés sur séries simulées** reprenant la situation du 2/11/2026 (cf. §6) |
+| 9 | Trajet : rayon à vol d'oiseau | V0 : rayon haversine 60 km (**approximation déclarée**) ; 2c : vrai temps de trajet (OpenRouteService/OSRM) |
+
+## 4. Architecture
+
+```
+champignons-radar/
+├─ PLAN.md  README.md  requirements.txt  .gitignore
+├─ config/config.yaml        # centre, rayon, maille, seuils (status), poids, quotas
+├─ config/species.yaml       # (phase 2b)
+├─ data/{raw,cache,processed,out}/   # gitignorés sauf out/ publié
+├─ radar/
+│  ├─ config.py  grid.py  weather.py  score.py  mapgen.py  cli.py  __main__.py
+│  └─ (plus tard) terrain.py travel.py report.py journal.py
+├─ web/index.html            # carte générée (Leaflet), données embarquées
+└─ tests/
+```
+
+Principe : terrain calculé une fois (figé) ; météo recalculée chaque jour ; la carte ne lit que des fichiers.
+
+## 5. Modèle de score (V0 = météo seule)
+
+Entrées par point : pluie journalière (30 j passés + 7 j prévus), Tmin/Tmoy, altitude.
+
+Composantes (0–1) :
+- `pluie` : cumul max sur 2 jours glissants dans les 15 derniers jours ; 0 sous 10 mm, 1 entre 20 et 60 mm, décroît (saturation) jusqu'à 0,5 vers 150 mm.
+- `delai` : jours depuis la pluie déclenchante (≥ 20 mm sur 2 j) ; 0 avant 4 j, plateau 8–14 j, décroissance jusqu'à 0 vers 35 j.
+- `temp` : moyenne des Tmin sur 7 j ; 1 si ≥ 8 °C, 0 à 3 °C.
+- `secheresse` : pluie moyenne (mm/j) depuis la pluie déclenchante ; pénalité si trop sec.
+- `prevision` : pluie prévue J+1..J+3 ; neutre si 5–40 mm, léger malus si très sec ou très forte pluie.
+
+Score météo = moyenne géométrique pondérée des composantes (plancher `floor`) × facteur gel.
+Facteur gel : `1 − pénalité_par_nuit × nuits_de_gel × (1,5 si altitude > 800 m)`, borné à ≥ `gel_floor` ; gel sévère (Tmin ≤ −4 °C) → facteur 0,1.
+
+Score final (V1+) : `100 × meteo^a × habitat^b × accessibilite` (a = 0,6, b = 0,4, en config). V0 : `100 × meteo`, habitat non appliqué (signalé).
+
+Ce que le score ne fait pas : comestibilité, micro-habitat, pluie très locale. Il peut être faux : d'où le journal et la calibration.
+
+## 6. Phases et « Définition de fini »
+
+**Phase 1 — V0 : météo + carte statique**
+Grille ~5 km dans 60 km autour de Montpellier ; Open-Meteo (historique 30 j + prévision 7 j, cache) ; score météo ; carte HTML Leaflet autonome ; tests.
+*Fini quand* : `python -m radar v0` produit `web/index.html` ouvrable en local ; tests verts avec ces cas simulés :
+ (a) situation 2/11/2026 (≈ 50 mm/15 j, pluie ≥ 20 mm il y a ~8 j, Tmin ~9 °C, 0 gel) → score ≥ 70 ;
+ (b) 3 nuits de gel récentes → score < 60 % du cas (a) mais > 0 ;
+ (c) 30 j sans pluie → score < 30 ;
+ (d) 200 mm la veille → score < 40 (trop tôt) ;
+ (e) monotonie : score décroît quand les jours de délai dépassent 20 j.
+
+**Phase 2a — terrain** : scripts de téléchargement + `SOURCES.md` (BD Forêt, BRGM, MNT) ; prétraitement ; grille 500 m. *Fini* : fichier traité reproductible, sources documentées.
+**Phase 2b — habitat** : `species.yaml`, score habitat par famille, score final. *Fini* : châtaigneraies sur schiste (Saint-Hippolyte-du-Fort, Sumène, Monoblet) et pinèdes de garrigue (Gardiole) ressortent comme plausibles.
+**Phase 2c — trajet** : temps de trajet réel ≤ 60 min, masque zones interdites. *Fini* : aucune cellule hors périmètre.
+**Phase 3 — V2 : temporel + automatisation + rapports** : curseur J-7→J+7, rapport (créneaux week-ends/fériés, top 3 zones, vigilance, chasse), Telegram, `daily.yml`.
+**Phase 4 — V3 : journal et calibration** : SQLite `sorties`, ≥ 20 sorties avant recalibration, rapport d'évaluation.
+
+## 7. Décisions par défaut (modifiables)
+
+- Maille : météo 5 km (résolution réelle des modèles, ne sert à rien de descendre) ; **terrain/habitat 250 m** (décision du 2026-11-02, demandé « plus petit que 500 m » ; réglable en config, 100 m possible si les sources le justifient).
+- Rapports : Telegram (canal de livraison du rapport sur le téléphone ; bot gratuit via BotFather, token en secret GitHub, jamais dans le dépôt).
+- Disponibilité : week-ends + jours fériés + **soirées de semaine tant que la lumière le permet** (départ 17 h ; il faut qu'il reste ≥ `min_forage_minutes` de jour à l'arrivée). Calcul de l'heure de coucher du soleil en phase 3. Test d'ordre de grandeur : à Montpellier, avec trajet 60 min + 60 min de cueillette, il faut un coucher ≳ 19 h → possible jusqu'à ~fin septembre, impossible dès le changement d'heure.
+- Familles de test : cèpes, puis lactaires, chanterelles.
+- Dépôt GitHub **public** sur le compte perso (décision explicite, 2026-11-02). Conséquence assumée : zones et scores visibles. Règle maintenue : aucun secret, aucun journal de sorties, aucune coordonnée personnelle dans le dépôt.
+
+## 8. Statut
+
+- [x] Plan révisé
+- [x] Phase 1 — V0 : 20 tests verts (critères a–e), run réel du 2026-11-02 OK (437 points, 281 terrestres scorés), carte `web/index.html`
+- [ ] Phase 2a — terrain (BD Forêt, BRGM, MNT) ← **prochaine étape**
+- [ ] Phase 2b / 2c
+- [ ] Phase 3
+- [ ] Phase 4
+
+**Commandes :** `python -m radar v0` · `python -m radar check-sources` · `.venv\Scripts\python -m pytest`
+
+**Constats du run V0 (2026-11-02) :**
+- 93 % des points sont « bon » ou « très bon » : la météo est quasi uniforme sur la zone (même épisode pluvieux ~19-20/10, délai 13-14 j). La V0 ne discrimine donc presque pas ; c'est attendu, la discrimination viendra de l'habitat (2b).
+- Le délai mesuré (13-14 j) diffère des « ~8 j » du plan initial : le plan s'appuyait sur un site tiers à seuil inconnu ; le seuil de 20 mm sur 2 j de cette config détecte l'épisode du 19-20/10. À recaler avec le journal.
+- Falaise du score au bord du plateau de délai (14 j) : le score peut chuter vite dans les jours suivants. Hypothèse à valider, pas un fait.
+- 156 points mer/étang écartés via l'altitude 0 de l'API (approximation ; le masque terrain en 2a remplacera ça). Camargue basse (altitude ~1 m) reste scorée sans masque d'habitat.
+- Pas de `make` sous Windows : remplacé par `python -m radar`.
+
+**Points en attente :** choix du remote GitHub (privé ?) ; confirmation des décisions §7 ; premier commit (non fait, en attente de ton accord).

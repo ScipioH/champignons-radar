@@ -1,0 +1,88 @@
+# Toutes les valeurs de seuil sont des HYPOTHESES non calibrées (status: hypothese)
+# tant que le journal de sorties compte moins de 20 entrées.
+
+center:
+  name: Montpellier
+  lat: 43.6108
+  lon: 3.8767
+
+grid:
+  radius_km: 60          # approximation haversine du "<= 1 h" (remplacé en phase 2c)
+  spacing_km: 5
+
+terrain:
+  spacing_m: 250          # maille habitat (phase 2a+) ; la météo reste à grid.spacing_km
+
+availability:             # utilisé par le rapport (phase 3)
+  days: [saturday, sunday, holiday, weekday_evening]
+  weekday_depart_hour: 17.0
+  max_travel_minutes: 60
+  min_forage_minutes: 60  # hypothèse : durée minimale utile de cueillette avec la lumière du jour
+
+weather:
+  api_url: https://api.open-meteo.com/v1/forecast
+  past_days: 30
+  forecast_days: 7
+  batch_size: 50          # points par requête
+  pause_seconds: 1.5      # pause entre lots
+  max_retries: 4
+  max_points_per_day: 2000   # garde-fou quota (limite gratuite ~10000 appels/jour)
+  cache_dir: data/cache
+
+score:
+  status: hypothese
+  floor: 0.05             # plancher par composante (évite l'effondrement à 0)
+  weights:
+    pluie: 0.30
+    delai: 0.25
+    temp: 0.20
+    secheresse: 0.15
+    prevision: 0.10
+  pluie:
+    trigger_mm: 20        # pluie déclenchante cumulée sur 2 jours
+    lookback_days: 15
+    zero_below_mm: 10
+    plateau_from_mm: 20
+    plateau_to_mm: 60
+    saturation_mm: 150
+    saturation_value: 0.5
+  delai:                  # jours depuis la pluie déclenchante (lookback 30 j)
+    zero_before: 4
+    plateau_from: 8
+    plateau_to: 14
+    zero_after: 35
+    lookback_days: 30
+  temp:
+    ideal_tmin: 8.0
+    zero_tmin: 3.0
+    window_days: 7
+  secheresse:
+    ok_mm_per_day: 1.0    # >= ce débit moyen depuis la pluie : pas de pénalité
+    min_value: 0.4
+  prevision:
+    horizon_days: 3
+    ok_from_mm: 5
+    ok_to_mm: 40
+    dry_value: 0.85
+    wet_mm: 80
+    wet_value: 0.8
+  gel:
+    window_days: 7
+    frost_tmin: 0.0
+    severe_tmin: -4.0
+    penalty_per_night: 0.25
+    altitude_threshold_m: 800
+    altitude_multiplier: 1.5
+    floor: 0.2
+    severe_factor: 0.1
+  classes:                # bornes sur le score 0-100
+    faible: 0
+    moyen: 35
+    bon: 55
+    tres_bon: 75
+  # exposants du score final (utilisés à partir de la phase 2b)
+  exponent_meteo: 0.6
+  exponent_habitat: 0.4
+
+calibration:
+  min_sorties: 20         # sous ce seuil : affichage "indice non calibré"
