@@ -20,7 +20,8 @@ TEMPLATE = """<!doctype html>
  #legend i{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:6px;vertical-align:middle}
 </style></head><body>
 <div id="banner"><b>Indice de POUSSE, pas de comestibilité.</b> __CALIB__ Respecter la vigilance Météo-France,
-la période de chasse et la réglementation locale. Échéance : __DATE__.</div>
+la période de chasse et la réglementation locale. Échéance : __DATE__.<br>
+<small>Données météo : <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0).</small></div>
 <div id="map"></div><div id="legend"><b>Classe</b><br>__LEGEND__</div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>

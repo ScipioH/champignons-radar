@@ -55,6 +55,8 @@ def build_url(points: list[tuple[float, float]], wcfg: dict) -> str:
         "forecast_days": wcfg["forecast_days"],
         "timezone": "Europe/Paris",
     }
+    if wcfg.get("model"):
+        params["models"] = wcfg["model"]  # ex. meteofrance_arome_france_hd ; absent = best_match
     return wcfg["api_url"] + "?" + urllib.parse.urlencode(params, safe=",")
 
 
@@ -87,7 +89,8 @@ def fetch_all(points: list[tuple[float, float]], wcfg: dict) -> dict[str, dict]:
     """Retourne {"lat,lon": {elevation,time,precip,tmin,tmean}} ; cache valable pour la journée."""
     cache_dir = resolve(wcfg["cache_dir"])
     cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_file = cache_dir / f"weather_{date.today().isoformat()}.json"
+    tag = f"{wcfg['model']}_" if wcfg.get("model") else ""
+    cache_file = cache_dir / f"weather_{tag}{date.today().isoformat()}.json"
     cache: dict[str, dict] = json.loads(cache_file.read_text(encoding="utf-8")) if cache_file.exists() else {}
 
     todo = [p for p in points if _key(*p) not in cache]

@@ -69,6 +69,35 @@ def cmd_check_sources(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_compare_models(args: argparse.Namespace) -> int:
+    from radar import compare
+
+    cfg = load_config(args.config)
+    lat0, lon0 = (float(x) for x in args.center.split(","))
+    pts = grid.build_grid(lat0, lon0, args.radius, args.spacing)
+    if args.limit:
+        pts = pts[: args.limit]
+    print(f"Zone test : centre {lat0},{lon0} rayon {args.radius} km maille {args.spacing} km -> {len(pts)} points")
+    idx = cfg["weather"]["past_days"]
+    summaries = {}
+    for model in args.models.split(","):
+        wcfg = dict(cfg["weather"])
+        wcfg["model"] = None if model == "best_match" else model
+        data = weather.fetch_all(pts, wcfg)
+        summaries[model] = compare.summarize(data, idx, cfg["score"])
+        print(f"\n== {model} ==")
+        for k, v in compare.public(summaries[model]).items():
+            print(f"  {k}: {v}")
+    names = list(summaries)
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            print(f"\n== écarts {names[i]} vs {names[j]} ==")
+            for k, v in compare.pairwise(summaries[names[i]], summaries[names[j]]).items():
+                print(f"  {k}: {v}")
+    print("\nRappel : sans observations au sol, ces écarts ne disent pas quel modèle est le plus juste.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="radar")
     ap.add_argument("--config", default=None, help="chemin d'un config.yaml alternatif")
@@ -78,6 +107,13 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(func=cmd_v0)
     p = sub.add_parser("check-sources", help="vérifier que les sources externes répondent")
     p.set_defaults(func=cmd_check_sources)
+    p = sub.add_parser("compare-models", help="comparer des modèles météo sur une zone test")
+    p.add_argument("--models", default="best_match,meteofrance_arome_france_hd")
+    p.add_argument("--center", default="43.9667,3.8500", help="lat,lon (défaut : Saint-Hippolyte-du-Fort)")
+    p.add_argument("--radius", type=float, default=20)
+    p.add_argument("--spacing", type=float, default=2)
+    p.add_argument("--limit", type=int, default=0)
+    p.set_defaults(func=cmd_compare_models)
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     return args.func(args)

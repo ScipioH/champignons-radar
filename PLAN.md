@@ -118,6 +118,37 @@ Principe : on distingue ce qui apporte de l'information réelle de ce qui ne fai
 
 Plan : en 2a, comparer sur 1–2 jours la grille 5 km (best_match) et AROME ~2 km ; garder AROME seulement si le gain est visible et le quota tenable ; appliquer la correction d'altitude à la température dans tous les cas. Aucune de ces corrections n'est validée sans journal de sorties.
 
+### Résultats du test comparatif (2026-11-02) — `python -m radar compare-models`
+Zone : 20 km autour de Saint-Hippolyte-du-Fort, maille 2 km, 309 points. Fenêtre = 15 derniers jours.
+
+| | best_match | AROME HD (1,5 km) | AROME seamless |
+|---|---|---|---|
+| Pluie 15 j moyenne (mm) | 161 | 227 | 179 |
+| Valeurs distinctes de pluie (/309) | 214 | 264 | 260 |
+| Écart-type du score | 7,6 | 5,1 | 4,7 |
+| Prévision J+1..J+3 | complète | **manquante dès J+2** (618 valeurs absentes) | complète |
+| Corrélation pluie↔altitude | +0,50 | −0,22 | −0,45 |
+| Gradient Tmin (°C/km) | −1,1 | −1,6 | −1,1 |
+
+Corrélation de la pluie 15 j entre modèles : best_match↔HD 0,24 ; best_match↔seamless −0,19 ; HD↔seamless 0,62. Classe de score différente pour ~25 % des points entre best_match et AROME.
+
+**Ce que ça dit, honnêtement :**
+1. Les modèles **ne s'accordent pas** sur la pluie (écart moyen 48–74 mm sur 15 j, corrélations faibles voire négatives). Sans observation, on ne peut **pas** dire lequel a raison : la différence de résolution n'est pas une preuve de justesse. Ces « jours passés » sont des analyses/prévisions courtes enchaînées, pas des mesures.
+2. **AROME HD seul est inutilisable** pour le score (prévision absente dès J+2) ; `meteofrance_seamless` complète avec ARPEGE.
+3. AROME donne plus de détail spatial (plus de valeurs distinctes) mais **réduit** l'écart-type du score : le gain de discrimination n'est pas démontré.
+4. **Correction au plan** : le gradient de Tmin mesuré est **−1,1 à −1,6 °C/km**, très loin de −6,5 (inversions nocturnes de novembre, confirmant la réserve sur le gel). Le gradient fixe de −6,5 °C/km est **abandonné pour Tmin** ; on utilisera un gradient empirique ajusté sur les données du jour, ou rien tant que non validé.
+5. Signe opposé de la corrélation pluie↔altitude entre best_match (+) et AROME (−) : sur un seul épisode, on ne peut pas conclure.
+
+**Décision :** aucun changement de modèle en production tant que non validé sur observations. Prochaine étape = validation sur stations Météo-France (ci-dessous).
+
+### Source d'observations vérifiée (2026-11-02)
+Données climatologiques de base – quotidiennes (Météo-France, data.gouv.fr, dataset `6569b51ae64326786e4e8e1a`), **Licence Ouverte 2.0**, mise à jour quotidienne. Fichiers utiles (≈0,5 Mo chacun) : `.../BASE/QUOT/Q_34_latest-2025-2026_RR-T-Vent.csv.gz` et `Q_30_...` sous `https://meteofrance.s3.sbg.io.cloud.ovh.net/data/synchro_ftp/`. Contiennent pluie (RR) et températures (TN/TX) par station, jusqu'à ~J-3.
+Plan de validation : pour chaque station de la zone avec RR/TN renseignés, comparer sur les 30 derniers jours les valeurs du modèle (best_match, AROME HD, seamless) à la mesure : biais, MAE, corrélation de la pluie 15 j, et taux de bonne détection de la pluie déclenchante (≥ 20 mm / 2 j). Critère de décision : garder un modèle si son MAE de pluie 15 j est inférieur d'au moins ~20 % à celui de best_match sur ≥ 10 stations ; sinon rester sur best_match.
+
+### Licences / attribution
+- Open-Meteo gratuit : usage **non commercial**, attribution **CC BY 4.0** obligatoire (ajoutée à la carte ; à reprendre dans le rapport email/PDF). Quota gratuit : 600/min, 5 000/h, 10 000/jour ; les requêtes > 2 semaines comptent comme plusieurs appels (comptage exact par nombre de points non documenté : garde-fou conservateur conservé).
+- Météo-France données publiques : Licence Ouverte 2.0 (mention de la source requise).
+
 ## 8. Statut
 
 - [x] Plan révisé
