@@ -94,16 +94,29 @@ Grille ~5 km dans 60 km autour de Montpellier ; Open-Meteo (historique 30 j + pr
 **Phase 2a — terrain** : scripts de téléchargement + `SOURCES.md` (BD Forêt, BRGM, MNT) ; prétraitement ; grille 500 m. *Fini* : fichier traité reproductible, sources documentées.
 **Phase 2b — habitat** : `species.yaml`, score habitat par famille, score final. *Fini* : châtaigneraies sur schiste (Saint-Hippolyte-du-Fort, Sumène, Monoblet) et pinèdes de garrigue (Gardiole) ressortent comme plausibles.
 **Phase 2c — trajet** : temps de trajet réel ≤ 60 min, masque zones interdites. *Fini* : aucune cellule hors périmètre.
-**Phase 3 — V2 : temporel + automatisation + rapports** : curseur J-7→J+7, rapport (créneaux week-ends/fériés, top 3 zones, vigilance, chasse), Telegram, `daily.yml`.
+**Phase 3 — V2 : temporel + automatisation + rapports** : curseur J-7→J+7, rapport (créneaux week-ends/fériés, top 3 zones, vigilance, chasse), **email + PDF** (cf. §7), `daily.yml`.
 **Phase 4 — V3 : journal et calibration** : SQLite `sorties`, ≥ 20 sorties avant recalibration, rapport d'évaluation.
 
 ## 7. Décisions par défaut (modifiables)
 
-- Maille : météo 5 km (résolution réelle des modèles, ne sert à rien de descendre) ; **terrain/habitat 250 m** (décision du 2026-11-02, demandé « plus petit que 500 m » ; réglable en config, 100 m possible si les sources le justifient).
-- Rapports : Telegram (canal de livraison du rapport sur le téléphone ; bot gratuit via BotFather, token en secret GitHub, jamais dans le dépôt).
+- Maille : **terrain/habitat 250 m, définitif** (décision du 2026-11-02 ; pas de 100 m). Météo : voir §7bis (downscaling).
+- Rapports : **email** (décision du 2026-11-02, remplace Telegram) : corps de mail = rapport, image de la carte zoomée sur la zone utile en pièce jointe/inline, et le tout repris en **PDF** joint. L'adresse destinataire et les identifiants SMTP vont **uniquement dans les secrets GitHub / `.env` local** (dépôt public : jamais dans le code ni la config). Choix du fournisseur SMTP d'envoi à vérifier en phase 3 (l'authentification SMTP de Microsoft/Outlook personnel a changé ces dernières années ; Gmail avec mot de passe d'application est le repli probable). Rendu de l'image côté serveur (Leaflet ne rend pas en headless) : matplotlib + fond de carte, à trancher en phase 3 en respectant la politique d'usage des tuiles ; PDF via une lib pure Python (reportlab).
 - Disponibilité : week-ends + jours fériés + **soirées de semaine tant que la lumière le permet** (départ 17 h ; il faut qu'il reste ≥ `min_forage_minutes` de jour à l'arrivée). Calcul de l'heure de coucher du soleil en phase 3. Test d'ordre de grandeur : à Montpellier, avec trajet 60 min + 60 min de cueillette, il faut un coucher ≳ 19 h → possible jusqu'à ~fin septembre, impossible dès le changement d'heure.
 - Familles de test : cèpes, puis lactaires, chanterelles.
 - Dépôt GitHub **public** sur le compte perso (décision explicite, 2026-11-02). Conséquence assumée : zones et scores visibles. Règle maintenue : aucun secret, aucun journal de sorties, aucune coordonnée personnelle dans le dépôt.
+
+## 7bis. Météo fine : downscaling (décision du 2026-11-02)
+
+Principe : on distingue ce qui apporte de l'information réelle de ce qui ne fait que lisser.
+
+| Variable | Méthode | Fiabilité |
+|---|---|---|
+| Interpoler les mailles de 5 km vers 250 m | Interpolation bilinéaire/IDW | **Aucune information nouvelle** : lissage seulement. Acceptable pour la pluie à défaut de mieux, à ne pas présenter comme de la précision |
+| Température | Correction d'altitude : `T_cellule = T_point + gradient × (alt_cellule − alt_point)`, gradient ≈ −6,5 °C/km (config) | Bonne en journée. **Mauvaise pour Tmin par nuit claire** (inversions, cuvettes froides : le gel de fond de vallon est sous-estimé). Limite à documenter dans le rapport |
+| Pluie | Pas de correction orographique par défaut. Option : gradient pluie/altitude **ajusté chaque jour sur les données elles-mêmes** (régression locale), désactivé par défaut tant qu'il n'est pas validé | Faible : la pluie cévenole est très locale. À valider, jamais par défaut |
+| Modèle plus fin | **AROME France (Météo-France, 1,5 km) via Open-Meteo** (`models=meteofrance_arome_france`). Testé le 2026-11-02 : répond avec 30 j d'historique, sans valeur manquante, relief différencié à 2,5 km | Vraie information supplémentaire, préférable à l'interpolation. À étudier en 2a : grille ~2 km = ~2800 points (quota/jour à relever en connaissance de cause), emprise limitée à la France, historique plus court à confirmer |
+
+Plan : en 2a, comparer sur 1–2 jours la grille 5 km (best_match) et AROME ~2 km ; garder AROME seulement si le gain est visible et le quota tenable ; appliquer la correction d'altitude à la température dans tous les cas. Aucune de ces corrections n'est validée sans journal de sorties.
 
 ## 8. Statut
 
@@ -123,4 +136,4 @@ Grille ~5 km dans 60 km autour de Montpellier ; Open-Meteo (historique 30 j + pr
 - 156 points mer/étang écartés via l'altitude 0 de l'API (approximation ; le masque terrain en 2a remplacera ça). Camargue basse (altitude ~1 m) reste scorée sans masque d'habitat.
 - Pas de `make` sous Windows : remplacé par `python -m radar`.
 
-**Points en attente :** choix du remote GitHub (privé ?) ; confirmation des décisions §7 ; premier commit (non fait, en attente de ton accord).
+**Points en attente :** fournisseur SMTP d'envoi (phase 3) ; arbitrage 5 km vs AROME ~2 km (début de 2a). Dépôt public : https://github.com/ScipioH/champignons-radar
