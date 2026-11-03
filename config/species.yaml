@@ -1,0 +1,132 @@
+# Habitat par famille (phase 2b). Valeurs = HYPOTHESES de cueilleur validées le 2026-11-04 (tableau du PLAN.md),
+# non calibrées. Poids 0-1 : 1 = idéal, 0 = défavorable. Toute classe de terrain.yaml doit recevoir un poids
+# (explicite, dérivé d'une forêt ouverte, ou nul par défaut) : le code refuse une config incomplète.
+status: hypothese
+
+# Classes forestières sans arbres : habitat nul pour toutes les familles (familles forestières).
+forest_zero: [hors_foret, sans_couvert, lande, herbace]
+# CODE_TFV non prévu (classe 'inconnu') : prior intermédiaire, jamais 0.
+forest_unknown_prior: 0.4
+# Forêts ouvertes = poids de la forêt fermée correspondante x facteur de la famille (open_factor).
+open_of:
+  feuillus_ouverts: feuillus_melanges
+  coniferes_ouverts: coniferes_melanges
+  mixte_ouvert: mixte
+
+geology_zero: [eau, anthropique]
+geology_unknown_prior: 0.6        # 'autre' (formation non classée)
+
+# Exposition : effet faible, versants frais (NE) favorisés en début de saison. Composante = projection du
+# vecteur d'exposition (pondéré par sin(pente)) sur la direction ; normalisée par ref_sin_slope (~20°).
+exposure:
+  months: [9, 10]
+  direction_deg: 45
+  amplitude: 0.10
+  ref_sin_slope: 0.34
+
+season:                  # (pas de clé « off » : YAML 1.1 la lit comme le booléen False)
+  in_season: 1.0
+  shoulder: 0.5          # mois adjacent à la saison
+  off_season: 0.1
+
+families:
+  cepes:
+    label: "Cèpes (bolets nobles)"
+    season_months: [9, 10, 11]
+    open_factor: 0.7
+    forest:
+      chataignier: 1.0
+      chene_vert: 0.8          # cèpe bronzé
+      chene_decidu: 0.8
+      hetre: 0.9
+      pin_maritime: 0.5        # cèpe des pins
+      pin_sylvestre: 0.5
+      pin_alep: 0.1
+      pin_noir_laricio: 0.3
+      douglas: 0.4
+      sapin_epicea: 0.4
+      feuillus_melanges: 0.5   # essence feuillue non précisée
+      coniferes_melanges: 0.3  # conifère non précisé
+      mixte: 0.5
+      # hypothèses complémentaires (classes absentes du tableau validé)
+      mixte_feuillus_dom: 0.5
+      mixte_coniferes_dom: 0.5
+      robinier: 0.2
+      feuillu_autre: 0.5
+      pins_melanges: 0.4
+      pin_autre: 0.4
+      pin_montagne: 0.4
+      meleze: 0.3
+      peupleraie: 0.1
+    geology: {acide: 1.0, calcaire: 0.5, detritique: 0.7, superficiel: 0.6, basique: 0.6}
+    altitude: {ideal_from: 200, ideal_to: 1200, ramp_m: 300, edge: 0.5}
+
+  lactaires:
+    label: "Lactaires délicieux (pins)"
+    season_months: [10, 11, 12]
+    open_factor: 0.8
+    forest:
+      chataignier: 0.0
+      chene_vert: 0.0
+      chene_decidu: 0.0
+      hetre: 0.0
+      pin_maritime: 0.8
+      pin_sylvestre: 0.8
+      pin_alep: 1.0
+      pin_noir_laricio: 0.7
+      douglas: 0.3
+      sapin_epicea: 0.3
+      feuillus_melanges: 0.0
+      coniferes_melanges: 0.6
+      mixte: 0.4
+      mixte_feuillus_dom: 0.4
+      mixte_coniferes_dom: 0.4
+      robinier: 0.0
+      feuillu_autre: 0.0
+      pins_melanges: 0.8
+      pin_autre: 0.8
+      pin_montagne: 0.6
+      meleze: 0.2
+      peupleraie: 0.0
+    geology: {acide: 0.8, calcaire: 1.0, detritique: 0.8, superficiel: 0.7, basique: 0.6}
+    altitude: {ideal_from: 0, ideal_to: 900, ramp_m: 400, edge: 0.4}
+
+  girolles:
+    label: "Girolles (chanterelles)"
+    season_months: [6, 7, 8, 9, 10, 11]
+    open_factor: 0.7
+    forest:
+      chataignier: 1.0
+      chene_vert: 0.6
+      chene_decidu: 0.7
+      hetre: 0.8
+      pin_maritime: 0.5
+      pin_sylvestre: 0.5
+      pin_alep: 0.1
+      pin_noir_laricio: 0.3
+      douglas: 0.4
+      sapin_epicea: 0.4
+      feuillus_melanges: 0.5
+      coniferes_melanges: 0.3
+      mixte: 0.5
+      mixte_feuillus_dom: 0.5
+      mixte_coniferes_dom: 0.5
+      robinier: 0.2
+      feuillu_autre: 0.5
+      pins_melanges: 0.3
+      pin_autre: 0.3
+      pin_montagne: 0.3
+      meleze: 0.3
+      peupleraie: 0.1
+    geology: {acide: 1.0, calcaire: 0.3, detritique: 0.6, superficiel: 0.6, basique: 0.5}
+    altitude: {ideal_from: 200, ideal_to: 1200, ramp_m: 300, edge: 0.5}
+
+# Critère de fin 2b, vérifié automatiquement sur les données réelles. ATTENTION : (a)-(d) vérifient que le code
+# applique les hypothèses de façon cohérente sur le vrai terrain ; ils ne prouvent PAS que les hypothèses sont
+# justes (seuls l'avis de terrain et le journal de sorties le peuvent).
+criteria:
+  top_fraction: 0.05
+  good_forest_cepes: [chataignier, chene_vert, chene_decidu, hetre]
+  zones:
+    gardiole: {lat: 43.490, lon: 3.770, radius_m: 3000}
+    montpellier: {lat: 43.611, lon: 3.877, radius_m: 1500, max_mean: 0.05}

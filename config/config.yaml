@@ -80,9 +80,10 @@ score:
     moyen: 35
     bon: 55
     tres_bon: 75
-  # exposants du score final (utilisés à partir de la phase 2b)
+  # exposants du score final (phase 2b). habitat 1,0 (et non 0,4) : décision du 2026-11-04, sinon une cellule
+  # à 10 % d'habitat garde 40 % du score (garrigue pelée « moyen » après une bonne pluie).
   exponent_meteo: 0.6
-  exponent_habitat: 0.4
+  exponent_habitat: 1.0
 
 calibration:
   min_sorties: 20         # sous ce seuil : affichage "indice non calibré"

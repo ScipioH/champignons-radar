@@ -10,12 +10,12 @@ from radar import grid, mapgen, score, weather
 from radar.config import load_config, resolve
 
 
-def cmd_v0(args: argparse.Namespace) -> int:
-    cfg = load_config(args.config)
+def meteo_points(cfg: dict, limit: int = 0) -> dict:
+    """Météo + score météo sur la grille 5 km ; écrit data/out/v0.json."""
     c = cfg["center"]
     pts = grid.build_grid(c["lat"], c["lon"], cfg["grid"]["radius_km"], cfg["grid"]["spacing_km"])
-    if args.limit:
-        pts = pts[: args.limit]
+    if limit:
+        pts = pts[:limit]
     wcfg = cfg["weather"]
     data = weather.fetch_all(pts, wcfg)
 
@@ -38,21 +38,50 @@ def cmd_v0(args: argparse.Namespace) -> int:
             continue
         out_points.append({"lat": lat, "lon": lon, "altitude": alt or 0, **r})
 
-    result = {"date": ref_date, "n_points": len(out_points), "points": out_points}
+    result = {"date": ref_date, "n_points": len(out_points), "points": out_points,
+              "skipped_sea": skipped_sea, "skipped_bad": skipped_bad}
     out_json = resolve("data/out/v0.json")
     out_json.parent.mkdir(parents=True, exist_ok=True)
     out_json.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
-    html = mapgen.write_map(result, (c["lat"], c["lon"]), calibrated=False, out=resolve("web/index.html"))
+    return result
 
+
+def cmd_v0(args: argparse.Namespace) -> int:
+    cfg = load_config(args.config)
+    c = cfg["center"]
+    result = meteo_points(cfg, args.limit)
+    html = mapgen.write_map(result, (c["lat"], c["lon"]), calibrated=False, out=resolve("web/v0.html"))
     counts: dict[str, int] = {}
-    for p in out_points:
+    for p in result["points"]:
         counts[p["classe"]] = counts.get(p["classe"], 0) + 1
-    print(f"Date de référence : {ref_date}")
-    print(f"{len(out_points)} points scorés ({skipped_sea} mer/étang ignorés, {skipped_bad} inexploitables)")
+    print(f"Date de référence : {result['date']}")
+    print(f"{result['n_points']} points scorés ({result['skipped_sea']} mer/étang ignorés, "
+          f"{result['skipped_bad']} inexploitables)")
     print("Répartition :", counts)
-    print(f"Carte : {html}")
+    print(f"Carte météo seule : {html}")
     print("Rappel : indice de pousse non calibré, jamais une validation de comestibilité.")
     return 0
+
+
+def cmd_score(args: argparse.Namespace) -> int:
+    from radar import habitat, rastermap
+
+    cfg = load_config(args.config)
+    c = cfg["center"]
+    result = meteo_points(cfg)
+    res = habitat.run(cfg, result["points"], month=args.month or None)
+    print(res["report"])
+    scfg = res["scfg"]
+    layers = {}
+    for k, fam in scfg["families"].items():
+        layers[f"final_{k}"] = {"label": f"Score — {fam['label']}", "kind": "final", "values": res["final"][k] / 100.0}
+    for k, fam in scfg["families"].items():
+        layers[f"hab_{k}"] = {"label": f"Habitat — {fam['label']}", "kind": "habitat", "values": res["hab"][k]}
+    idx, bounds = rastermap.display_grid(res["t"], res["meta"]["grid"])
+    html = rastermap.write(resolve("web/index.html"), layers=layers, idx=idx, bounds=bounds, points=result["points"],
+                           date_=result["date"], center=(c["lat"], c["lon"]), classes=cfg["score"]["classes"])
+    print(f"\nCarte : {html}")
+    return 0 if all(x["ok"] for x in res["criteria"]) else 2
 
 
 def cmd_check_sources(args: argparse.Namespace) -> int:
@@ -122,6 +151,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("v0", help="météo + score + carte V0")
     p.add_argument("--limit", type=int, default=0, help="limiter le nombre de points (debug)")
     p.set_defaults(func=cmd_v0)
+    p = sub.add_parser("score", help="météo + habitat 250 m -> score final et carte web/index.html")
+    p.add_argument("--month", type=int, default=0, help="mois simulé (saison/exposition), défaut : mois courant")
+    p.set_defaults(func=cmd_score)
     p = sub.add_parser("check-sources", help="vérifier que les sources externes répondent")
     p.set_defaults(func=cmd_check_sources)
     p = sub.add_parser("fetch", help="télécharger les sources de terrain vérifiées (config/sources.yaml)")

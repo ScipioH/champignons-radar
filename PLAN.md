@@ -76,7 +76,8 @@ Composantes (0–1) :
 Score météo = moyenne géométrique pondérée des composantes (plancher `floor`) × facteur gel.
 Facteur gel : `1 − pénalité_par_nuit × nuits_de_gel × (1,5 si altitude > 800 m)`, borné à ≥ `gel_floor` ; gel sévère (Tmin ≤ −4 °C) → facteur 0,1.
 
-Score final (V1+) : `100 × meteo^a × habitat^b × accessibilite` (a = 0,6, b = 0,4, en config). V0 : `100 × meteo`, habitat non appliqué (signalé).
+Score final (2b+) : `100 × meteo^a × habitat^b × saison × accessibilite` (a = 0,6, **b = 1,0** depuis le 2026-11-04 : avec 0,4, une cellule à 10 % d'habitat gardait 40 % du score ; accessibilité = 1 jusqu'en 2c). V0 : `100 × meteo`.
+Habitat (`config/species.yaml`) = forêt × géologie × altitude × exposition, forêt et géologie = moyennes des poids pondérées par la part de chaque classe dans la cellule (approximation : pas de croisement pixel à pixel). Essence non précisée = prior intermédiaire ; hors couverture = inconnu (NaN), jamais 0. Météo ramenée aux cellules 250 m par IDW des points 5 km (lissage, pas d'information nouvelle).
 
 Ce que le score ne fait pas : comestibilité, micro-habitat, pluie très locale. Il peut être faux : d'où le journal et la calibration.
 
@@ -92,7 +93,13 @@ Grille ~5 km dans 60 km autour de Montpellier ; Open-Meteo (historique 30 j + pr
  (e) monotonie : score décroît quand les jours de délai dépassent 20 j.
 
 **Phase 2a — terrain** : scripts de téléchargement + `SOURCES.md` (BD Forêt, BRGM, MNT) ; prétraitement ; grille 500 m. *Fini* : fichier traité reproductible, sources documentées.
-**Phase 2b — habitat** : `species.yaml`, score habitat par famille, score final. *Fini* : châtaigneraies sur schiste (Saint-Hippolyte-du-Fort, Sumène, Monoblet) et pinèdes de garrigue (Gardiole) ressortent comme plausibles.
+**Phase 2b — habitat** : `species.yaml`, score habitat par famille (cèpes, lactaires délicieux, girolles), score final. *Fini* (réécrit le 2026-11-04, l'ancien critère « châtaigneraies sur schiste à Monoblet/Saint-Hippolyte » étant démenti par la carte géologique) — vérifié automatiquement par `python -m radar score` :
+ (a) les 5 % de cellules les mieux notées « cèpes » sont majoritairement sur sol acide ET châtaignier/chênes/hêtre ;
+ (b) Gardiole (3 km) : habitat lactaires > cèpes ;
+ (c) Montpellier centre (1,5 km) : habitat ≤ 0,05 pour toutes les familles ;
+ (d) cellules hors couverture = « inconnu », aucune cellule couverte sans valeur ;
+ (e) avis de l'utilisateur sur la carte (coins connus).
+ ⚠️ (a)–(d) vérifient que le code applique les hypothèses de façon cohérente sur le vrai terrain, **pas** que les hypothèses sont justes.
 **Phase 2c — trajet** : temps de trajet réel ≤ 60 min, masque zones interdites. *Fini* : aucune cellule hors périmètre.
 **Phase 3 — V2 : temporel + automatisation + rapports** : curseur J-7→J+7, rapport (créneaux week-ends/fériés, top 3 zones, vigilance, chasse), **email + PDF** (cf. §7), `daily.yml`.
 **Phase 4 — V3 : journal et calibration** : SQLite `sorties`, ≥ 20 sorties avant recalibration, rapport d'évaluation.
@@ -154,12 +161,12 @@ Plan de validation : pour chaque station de la zone avec RR/TN renseignés, comp
 - [x] Plan révisé
 - [x] Phase 1 — V0 : 20 tests verts (critères a–e), run réel du 2026-11-02 OK (437 points, 281 terrestres scorés), carte `web/index.html`
 - [x] Phase 2a — terrain : sources vérifiées/téléchargées/auditées (`SOURCES.md`) ; prétraitement `python -m radar terrain` (19 s) → 124 172 cellules de 250 m (`data/processed/terrain_250m.npz` + `terrain_meta.json` + `terrain_report.txt`) ; 61 tests verts dont une chaîne complète sur fichiers synthétiques
-- [ ] Phase 2b — habitat (`species.yaml`, score habitat, score final) ← **prochaine étape**
-- [ ] Phase 2c — trajet
+- [x] Phase 2b — habitat : `config/species.yaml` (tableau validé le 2026-11-04, 3 familles, pas d'autres), `radar/habitat.py`, carte raster 250 m `web/index.html` (couches score + habitat par famille, clic = valeurs) ; critères (a)–(d) OK sur données réelles ; 78 tests verts. **(e) en attente : avis de l'utilisateur sur la carte.**
+- [ ] Phase 2c — trajet ← **prochaine étape**
 - [ ] Phase 3
 - [ ] Phase 4
 
-**Commandes :** `python -m radar v0` · `python -m radar check-sources` · `python -m radar fetch` · `python -m radar terrain` · `.venv\Scripts\python -m pytest`
+**Commandes :** `python -m radar score` (carte finale `web/index.html`) · `python -m radar v0` (météo seule, `web/v0.html`) · `python -m radar check-sources` · `python -m radar fetch` · `python -m radar terrain` · `.venv\Scripts\python -m pytest`
 
 **Constats du run V0 (2026-11-02) :**
 - 93 % des points sont « bon » ou « très bon » : la météo est quasi uniforme sur la zone (même épisode pluvieux ~19-20/10, délai 13-14 j). La V0 ne discrimine donc presque pas ; c'est attendu, la discrimination viendra de l'habitat (2b).
@@ -180,5 +187,11 @@ Plan de validation : pour chaque station de la zone avec RR/TN renseignés, comp
 - **Encodages** : BD Forêt UTF-8 strict (apostrophe en U+0092 à normaliser) ; géologie cp1252. Projection source Lambert 93 (EPSG:2154) pour les deux.
 - **MNT** : Copernicus GLO-30 (30 m, DSM) retenu plutôt que RGE ALTI (paquets départementaux très lourds) ; suffisant pour altitude/exposition à 250 m, pas pour des pentes fines (voir `SOURCES.md`).
 - **Réserves** : BD Forêt date de 2018 (incendies/coupes postérieurs invisibles) ; miroir BRGM tiers faute d'accès officiel (403).
+
+**Constats 2b (run du 2026-11-04, mois 11)** :
+- Critères : (a) top 5 % cèpes = 91 % sol acide, 75 % châtaignier/chênes/hêtre ; (b) Gardiole lactaires 0,11 vs cèpes 0,09 — **marge faible** : la Gardiole est surtout garrigue/chêne vert, peu de pin d'Alep cartographié ; (c) Montpellier ≤ 0,001 ; (d) 3 686 cellules inconnues.
+- Habitat médian des peuplements purs (≥ 70 %) : châtaignier 0,96 (cèpes) ; pin d'Alep 0,85 (lactaires) ; chêne vert 0,39 (cèpes : 0,8 essence × 0,5 calcaire) ; hêtre 0,75.
+- Score final : 95–97 % des cellules « faible ». Deux causes : (1) **météo du jour en baisse** (médiane 50 contre 93 % « bon » le 2/11 : l'épisode du 19–20/10 sort du plateau de délai de 14 j — la « falaise » prévue) ; (2) l'habitat multiplie trois facteurs (essence × sol × altitude), ce qui pénalise les cas intermédiaires (chênaie verte sur calcaire). À juger sur le terrain avant de retoucher les poids.
+- Point à surveiller : `exponent_habitat` = 1,0 rend le score très sélectif ; si les coins connus ressortent trop faibles, c'est le premier réglage à revoir (avec le poids calcaire des cèpes).
 
 Dépôt public : https://github.com/ScipioH/champignons-radar
