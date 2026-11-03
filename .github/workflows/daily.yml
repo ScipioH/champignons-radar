@@ -1,0 +1,75 @@
+# Rapport quotidien Champignons Radar : météo du jour + habitat + trajets -> email (texte, carte, PDF).
+#
+# Secrets à créer (Settings > Secrets and variables > Actions) :
+#   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, REPORT_TO   (obligatoires pour l'envoi)
+#   REPORT_FROM                                                  (facultatif, défaut = SMTP_USER)
+#   RADAR_HOME_LAT, RADAR_HOME_LON                               (facultatif : départ = domicile)
+#
+# DÉPÔT PUBLIC : les journaux d'exécution sont visibles de tous. Rien de personnel n'y est écrit (--quiet,
+# sorties redirigées) ; aucun fichier n'est publié en artefact ; seul le terrain (données publiques) est mis
+# en cache — les temps de trajet (qui trahiraient le domicile) sont recalculés à chaque exécution.
+# NB : GitHub suspend les tâches planifiées d'un dépôt public sans commit depuis 60 jours (réactivable d'un clic).
+name: daily
+
+on:
+  schedule:
+    - cron: "30 5 * * *"      # 05:30 UTC = 6 h 30 / 7 h 30 heure de Paris
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      REPORT_TO: ${{ secrets.REPORT_TO }}
+      REPORT_FROM: ${{ secrets.REPORT_FROM }}
+      RADAR_HOME_LAT: ${{ secrets.RADAR_HOME_LAT }}
+      RADAR_HOME_LON: ${{ secrets.RADAR_HOME_LON }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Dépendances
+        run: pip install -r requirements.txt
+
+      - name: Cache du terrain (données publiques uniquement)
+        id: terrain
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/processed/terrain_250m.npz
+            data/processed/terrain_meta.json
+          key: terrain-v1-${{ hashFiles('config/sources.yaml', 'config/terrain.yaml', 'radar/terrain.py', 'radar/fetch.py') }}-${{ hashFiles('config/config.yaml') }}
+
+      - name: Terrain (téléchargement + prétraitement, si pas en cache)
+        if: steps.terrain.outputs.cache-hit != 'true'
+        run: |
+          python -m radar fetch > /dev/null
+          python -m radar terrain > /dev/null
+
+      - name: Temps de trajet et zones protégées
+        run: python -m radar access > /dev/null 2>&1
+
+      - name: Rapport et envoi
+        run: |
+          if [ -z "$SMTP_HOST" ] || [ -z "$REPORT_TO" ]; then
+            echo "::warning::SMTP non configuré (secrets) : rapport généré mais non envoyé."
+            python -m radar report --quiet
+          else
+            python -m radar report --quiet --send
+          fi

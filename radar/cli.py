@@ -155,6 +155,23 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_report(args: argparse.Namespace) -> int:
+    from radar import habitat, report
+
+    cfg = load_config(args.config)
+    result = meteo_points(cfg)
+    res = habitat.run(cfg, result, month=args.month or None)
+    out = report.run(res, result, cfg, do_send=args.send, basemap=not args.no_basemap)
+    if not args.quiet:
+        print(res["report"])
+        print()
+        print(out["text"])
+        print(f"\nFichiers : {out['dir']} (rapport.txt, email.html, carte.png, PDF, email.eml)")
+    print(f"Rapport {result['date']} : {len(out['report']['days'])} créneau(x). "
+          + ("Email envoyé." if out["sent"] else "Email NON envoyé (--send ; SMTP dans .env ou secrets)."))
+    return 0
+
+
 def cmd_access(args: argparse.Namespace) -> int:
     from radar import access
 
@@ -178,6 +195,12 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("v0", help="météo + score + carte V0")
     p.add_argument("--limit", type=int, default=0, help="limiter le nombre de points (debug)")
     p.set_defaults(func=cmd_v0)
+    p = sub.add_parser("report", help="rapport des créneaux et meilleures zones (texte, HTML, carte, PDF, email)")
+    p.add_argument("--send", action="store_true", help="envoyer l'email (SMTP_* et REPORT_TO dans .env / secrets)")
+    p.add_argument("--no-basemap", action="store_true", help="sans fond de carte IGN (hors ligne)")
+    p.add_argument("--quiet", action="store_true", help="n'affiche ni zones ni trajets (journaux CI publics)")
+    p.add_argument("--month", type=int, default=0)
+    p.set_defaults(func=cmd_report)
     p = sub.add_parser("access", help="temps de trajet réels (OSRM) + zones protégées -> data/processed (une fois)")
     p.set_defaults(func=cmd_access)
     p = sub.add_parser("score", help="météo + habitat 250 m -> score final et carte web/index.html")

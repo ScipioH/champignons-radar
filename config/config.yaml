@@ -108,5 +108,13 @@ score:
   exponent_meteo: 0.6
   exponent_habitat: 1.0
 
+report:                   # phase 3 : `python -m radar report [--send]`
+  horizon_days: 7         # créneaux de J à J+7
+  top_n: 3                # zones par famille et par jour
+  min_separation_km: 5    # deux zones proposées sont distantes d'au moins ça
+  hunting_months: [9, 10, 11, 12, 1, 2]   # rappel « chasse » (période générale ; arrêtés départementaux à vérifier)
+  # Destinataire et SMTP : UNIQUEMENT .env local / secrets GitHub (REPORT_TO, SMTP_HOST, SMTP_PORT, SMTP_USER,
+  # SMTP_PASSWORD, REPORT_FROM). Jamais ici : dépôt public.
+
 calibration:
   min_sorties: 20         # sous ce seuil : affichage "indice non calibré"
