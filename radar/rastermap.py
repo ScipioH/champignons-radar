@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 from pyproj import Transformer
 
-from radar.mapgen import COLORS, _safe_json
+from radar.mapgen import COLORS, TILES_JS, _safe_json
 from radar.terrain import L93
 
 UNKNOWN, OUTSIDE = 254, 255
@@ -81,15 +81,15 @@ TEMPLATE = """<!doctype html>
 = hypothèses). Respecter la vigilance Météo-France, la chasse, les propriétés privées et la réglementation locale.
 Météo du __DATE__ (maille 5 km, lissée : pas plus précise à 250 m). Habitat 2018 (BD Forêt).<br>
 <small>Météo : <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0) · Forêt : IGN BD Forêt V2 ·
-Géologie : BRGM BD Charm-50 · Relief : Copernicus GLO-30 © DLR/Airbus (ESA) · Fond : OpenStreetMap</small></div>
+Géologie : BRGM BD Charm-50 · Relief : Copernicus GLO-30 © DLR/Airbus (ESA) · Fond : OpenStreetMap, CARTO / OpenTopoMap</small></div>
 <div id="map"></div><div id="legend"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const D = __DATA__;
 const COLORS = __COLORS__;
 const map = L.map('map').setView([__LAT__, __LON__], 9);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-  {maxZoom: 17, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);
+__TILES__
+L.control.layers(BASES, {}, {position: 'bottomright'}).addTo(map);
 async function inflate(b64) {
   const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
   const s = new Blob([bin]).stream().pipeThrough(new DecompressionStream('deflate'));
@@ -173,7 +173,7 @@ def build_html(layers: dict, idx: np.ndarray, bounds, points: list[dict], date_:
                    for n, l in layers.items()},
     }
     html = TEMPLATE
-    for k, v in {"__DATA__": _safe_json(data), "__COLORS__": json.dumps(COLORS, ensure_ascii=False),
+    for k, v in {"__TILES__": TILES_JS, "__DATA__": _safe_json(data), "__COLORS__": json.dumps(COLORS, ensure_ascii=False),
                  "__LAT__": str(center[0]), "__LON__": str(center[1]), "__DATE__": str(date_)}.items():
         html = html.replace(k, v)
     return html

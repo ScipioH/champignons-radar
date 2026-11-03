@@ -4,6 +4,22 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+# Fonds de carte. PAS les tuiles tile.openstreetmap.org : leur politique d'usage bloque les pages ouvertes en
+# local (file://, sans Referer) -> « Access blocked ». CARTO (défaut) et OpenTopoMap (relief) les acceptent ;
+# usage personnel modéré, attributions obligatoires.
+# Script JS à insérer après la création de `map` ; définit BASES (dict nom -> couche), la 1re est affichée.
+TILES_JS = """
+const BASES = {
+  'Plan (CARTO)': L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    {maxZoom: 19, subdomains: 'abcd',
+     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'}),
+  'Relief (OpenTopoMap)': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    {maxZoom: 17, subdomains: 'abc',
+     attribution: '&copy; OpenStreetMap, SRTM | style &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)'}),
+};
+BASES['Plan (CARTO)'].addTo(map);
+"""
+
 COLORS = {"faible": "#b0b0b0", "moyen": "#f2c14e", "bon": "#7cb342", "très bon": "#1b7a3d", "indéterminé": "#555555"}
 
 TEMPLATE = """<!doctype html>
@@ -27,8 +43,8 @@ la période de chasse et la réglementation locale. Échéance : __DATE__.<br>
 <script>
 const DATA = __DATA__;
 const map = L.map('map').setView([__LAT__, __LON__], 9);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-  {maxZoom: 17, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);
+__TILES__
+L.control.layers(BASES, {}, {position: 'topright'}).addTo(map);
 const COLORS = __COLORS__;
 for (const p of DATA.points) {
   const m = L.circleMarker([p.lat, p.lon], {radius: 7, color: '#222', weight: 0.5,
@@ -54,6 +70,7 @@ def build_html(result: dict, center: tuple[float, float], calibrated: bool) -> s
     calib = "" if calibrated else "<b>Indice non calibré</b> (seuils = hypothèses, journal &lt; 20 sorties)."
     html = TEMPLATE
     for k, v in {
+        "__TILES__": TILES_JS,
         "__DATA__": _safe_json(result),
         "__COLORS__": _safe_json(COLORS),
         "__LAT__": str(center[0]),
