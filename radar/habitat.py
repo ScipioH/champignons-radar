@@ -123,30 +123,54 @@ def compute_habitat(t: dict, scfg: dict, fclasses: list[str], gclasses: list[str
 
 # --------------------------------------------------------------------------- météo -> cellules, score final
 
-def idw(px: np.ndarray, py: np.ndarray, pv: np.ndarray, cx: np.ndarray, cy: np.ndarray,
-        k: int = 4, power: float = 2.0, chunk: int = 20000) -> np.ndarray:
-    """Pondération inverse des distances sur les k points les plus proches (lissage)."""
-    k = min(k, len(pv))
-    out = np.empty(len(cx))
+def idw_weights(px: np.ndarray, py: np.ndarray, cx: np.ndarray, cy: np.ndarray,
+                k: int = 4, power: float = 2.0, chunk: int = 20000) -> tuple[np.ndarray, np.ndarray]:
+    """Voisins (k plus proches) et poids normalisés de pondération inverse des distances. Calculés une fois,
+    réutilisés pour chaque jour du curseur."""
+    k = min(k, len(px))
+    nn = np.empty((len(cx), k), dtype=np.int64)
+    w = np.empty((len(cx), k))
     for s in range(0, len(cx), chunk):
-        dx = cx[s:s + chunk, None] - px[None, :]
-        dy = cy[s:s + chunk, None] - py[None, :]
-        d = np.hypot(dx, dy)
-        nn = np.argpartition(d, k - 1, axis=1)[:, :k]
-        dn = np.take_along_axis(d, nn, axis=1)
-        w = 1.0 / np.maximum(dn, 1.0) ** power
-        out[s:s + chunk] = (w * pv[nn]).sum(axis=1) / w.sum(axis=1)
-    return out
+        d = np.hypot(cx[s:s + chunk, None] - px[None, :], cy[s:s + chunk, None] - py[None, :])
+        n_ = np.argpartition(d, k - 1, axis=1)[:, :k]
+        w_ = 1.0 / np.maximum(np.take_along_axis(d, n_, axis=1), 1.0) ** power
+        nn[s:s + chunk], w[s:s + chunk] = n_, w_ / w_.sum(axis=1, keepdims=True)
+    return nn, w
+
+
+def idw(px: np.ndarray, py: np.ndarray, pv: np.ndarray, cx: np.ndarray, cy: np.ndarray, k: int = 4) -> np.ndarray:
+    """Pondération inverse des distances sur les k points les plus proches (lissage)."""
+    nn, w = idw_weights(px, py, cx, cy, k)
+    return (w * pv[nn]).sum(axis=1)
+
+
+class MeteoInterp:
+    """Ramène des valeurs portées par les points météo (5 km) sur les cellules 250 m."""
+
+    def __init__(self, points: list[dict], cx: np.ndarray, cy: np.ndarray):
+        self.points = [p for p in points if p.get("score") is not None]
+        if not self.points:
+            raise ValueError("aucun point météo exploitable")
+        x, y = Transformer.from_crs("EPSG:4326", L93, always_xy=True).transform(
+            [p["lon"] for p in self.points], [p["lat"] for p in self.points])
+        self.nn, self.w = idw_weights(np.asarray(x), np.asarray(y), cx, cy)
+
+    def __call__(self, values: list[float | None]) -> np.ndarray:
+        """values (0-100, une par point retenu) -> score 0-1 par cellule ; point sans valeur ignoré."""
+        v = np.array([np.nan if x is None else x for x in values], dtype=np.float64) / 100.0
+        vv = v[self.nn]
+        w = np.where(np.isnan(vv), 0.0, self.w)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            return (w * np.nan_to_num(vv)).sum(axis=1) / w.sum(axis=1)
+
+    def day(self, i: int | None = None) -> np.ndarray:
+        """Jour i du curseur (index dans 'timeline') ; None = score du jour J."""
+        return self([p["score"] if i is None else p["timeline"][i] for p in self.points])
 
 
 def meteo_on_cells(points: list[dict], cx: np.ndarray, cy: np.ndarray) -> np.ndarray:
     """Score météo 0-1 par cellule à partir des points V0 (score 0-100)."""
-    pts = [p for p in points if p.get("score") is not None]
-    if not pts:
-        raise ValueError("aucun point météo exploitable")
-    x, y = Transformer.from_crs("EPSG:4326", L93, always_xy=True).transform(
-        [p["lon"] for p in pts], [p["lat"] for p in pts])
-    return idw(np.asarray(x), np.asarray(y), np.array([p["score"] for p in pts]) / 100.0, cx, cy)
+    return MeteoInterp(points, cx, cy).day()
 
 
 def final_score(meteo: np.ndarray, habitat: np.ndarray, season: float, scfg_score: dict,
@@ -222,19 +246,42 @@ def describe(t: dict, hab: dict, scfg: dict, fclasses: list[str], month: int) ->
     return lines
 
 
-def run(cfg: dict, weather_points: list[dict] | None, month: int | None = None) -> dict:
+def final_days(t: dict, weather: dict, scfg: dict, fclasses: list[str], gclasses: list[str], cfg: dict,
+               month_override: int | None = None) -> dict[str, list[np.ndarray]]:
+    """Score final de chaque famille pour chaque jour du curseur (saison et exposition du mois de CE jour)."""
+    interp = MeteoInterp(weather["points"], t["x"], t["y"])
+    hab_by_month: dict[int, dict[str, np.ndarray]] = {}
+    out: dict[str, list[np.ndarray]] = {k: [] for k in scfg["families"]}
+    for i, d in enumerate(weather["dates"]):
+        m = month_override or int(d[5:7])
+        if m not in hab_by_month:
+            hab_by_month[m] = compute_habitat(t, scfg, fclasses, gclasses, m)
+        meteo = interp.day(i)
+        for k, fam in scfg["families"].items():
+            s = season_factor(m, fam["season_months"], scfg["season"])
+            out[k].append(final_score(meteo, hab_by_month[m][k], s, cfg["score"]))
+    return out
+
+
+def run(cfg: dict, weather: dict | None, month: int | None = None) -> dict:
+    """weather : résultat de cli.meteo_points (points + dates du curseur), ou None pour l'habitat seul."""
     scfg = load_species()
     t, meta = load_terrain()
     fclasses, gclasses = meta["forest_classes"], meta["geol_classes"]
+    month_override = month
     month = month or date.today().month
     hab = compute_habitat(t, scfg, fclasses, gclasses, month)
     crit = check_criteria(t, hab, scfg, fclasses, gclasses)
-    res = {"t": t, "meta": meta, "hab": hab, "criteria": crit, "month": month, "scfg": scfg, "final": {}}
+    res: dict = {"t": t, "meta": meta, "hab": hab, "criteria": crit, "month": month, "scfg": scfg, "final": {}}
     lines = [f"# Habitat & score final — {date.today().isoformat()} (mois {month})", "", "## Habitat par famille"]
     lines += describe(t, hab, scfg, fclasses, month)
-    if weather_points is not None:
+    if weather is not None:
+        weather_points = weather["points"]
         meteo = meteo_on_cells(weather_points, t["x"], t["y"])
         res["meteo"] = meteo
+        if weather.get("dates"):
+            res["final_days"] = final_days(t, weather, scfg, fclasses, gclasses, cfg, month_override)
+            res["dates"], res["offsets"] = weather["dates"], weather["offsets"]
         lines += ["", "## Score final (classes sur cellules connues)"]
         for k, h in hab.items():
             fam = scfg["families"][k]

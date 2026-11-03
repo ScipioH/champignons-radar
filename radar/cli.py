@@ -20,26 +20,31 @@ def meteo_points(cfg: dict, limit: int = 0) -> dict:
     data = weather.fetch_all(pts, wcfg)
 
     idx = wcfg["past_days"]
+    tl = cfg["timeline"]
+    offsets = list(range(-tl["days_before"], tl["days_after"] + 1))
     out_points, skipped_sea, skipped_bad = [], 0, 0
-    ref_date = None
+    ref_date, dates = None, None
     for lat, lon in pts:
         d = data[f"{lat:.4f},{lon:.4f}"]
         alt = d.get("elevation")
         if alt is not None and alt <= 0:
             skipped_sea += 1  # mer / étang : hors sujet pour la cueillette
             continue
-        if len(d["precip"]) <= idx:
+        if len(d["precip"]) <= idx + offsets[-1]:
             skipped_bad += 1
             continue
         ref_date = d["time"][idx]
+        dates = [d["time"][idx + o] for o in offsets]
         r = score.score_point(d["precip"], d["tmin"], idx, alt, cfg["score"])
         if r["score"] is None:
             skipped_bad += 1
             continue
-        out_points.append({"lat": lat, "lon": lon, "altitude": alt or 0, **r})
+        # score météo de chaque jour du curseur (les jours > J s'appuient sur la prévision)
+        timeline = [score.score_point(d["precip"], d["tmin"], idx + o, alt, cfg["score"])["score"] for o in offsets]
+        out_points.append({"lat": lat, "lon": lon, "altitude": alt or 0, **r, "timeline": timeline})
 
-    result = {"date": ref_date, "n_points": len(out_points), "points": out_points,
-              "skipped_sea": skipped_sea, "skipped_bad": skipped_bad}
+    result = {"date": ref_date, "n_points": len(out_points), "points": out_points, "offsets": offsets,
+              "dates": dates, "skipped_sea": skipped_sea, "skipped_bad": skipped_bad}
     out_json = resolve("data/out/v0.json")
     out_json.parent.mkdir(parents=True, exist_ok=True)
     out_json.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
@@ -69,17 +74,19 @@ def cmd_score(args: argparse.Namespace) -> int:
     cfg = load_config(args.config)
     c = cfg["center"]
     result = meteo_points(cfg)
-    res = habitat.run(cfg, result["points"], month=args.month or None)
+    res = habitat.run(cfg, result, month=args.month or None)
     print(res["report"])
     scfg = res["scfg"]
     layers = {}
     for k, fam in scfg["families"].items():
-        layers[f"final_{k}"] = {"label": f"Score — {fam['label']}", "kind": "final", "values": res["final"][k] / 100.0}
+        layers[f"final_{k}"] = {"label": f"Score — {fam['label']}", "kind": "final",
+                                "values": [v / 100.0 for v in res["final_days"][k]]}
     for k, fam in scfg["families"].items():
-        layers[f"hab_{k}"] = {"label": f"Habitat — {fam['label']}", "kind": "habitat", "values": res["hab"][k]}
+        layers[f"hab_{k}"] = {"label": f"Habitat — {fam['label']}", "kind": "habitat", "values": [res["hab"][k]]}
     idx, bounds = rastermap.display_grid(res["t"], res["meta"]["grid"])
+    days = [{"offset": o, "date": d} for o, d in zip(result["offsets"], result["dates"])]
     html = rastermap.write(resolve("web/index.html"), layers=layers, idx=idx, bounds=bounds, points=result["points"],
-                           date_=result["date"], center=(c["lat"], c["lon"]), classes=cfg["score"]["classes"])
+                           days=days, center=(c["lat"], c["lon"]), classes=cfg["score"]["classes"])
     print(f"\nCarte : {html}")
     return 0 if all(x["ok"] for x in res["criteria"]) else 2
 

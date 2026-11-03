@@ -57,6 +57,9 @@ def test_fetch_lots_et_cache(monkeypatch, wcfg):
     assert len(out) == 7 and len(calls) == 3  # 3 + 3 + 1
     weather.fetch_all(pts, wcfg)
     assert len(calls) == 3  # tout vient du cache
+    wcfg["past_days"] += 10
+    weather.fetch_all(pts, wcfg)
+    assert len(calls) == 6  # autre fenêtre demandée : le cache du jour ne doit pas être réutilisé
 
 
 def test_quota_garde_fou(monkeypatch, wcfg):
@@ -75,7 +78,12 @@ def test_reponse_incoherente(monkeypatch, wcfg):
 def test_build_url_groupee():
     url = weather.build_url([(43.1, 3.2), (43.3, 3.4)], CFG["weather"])
     assert "latitude=43.1000,43.3000" in url and "longitude=3.2000,3.4000" in url
-    assert "past_days=30" in url and "forecast_days=7" in url
+    w = CFG["weather"]
+    assert f"past_days={w['past_days']}" in url and f"forecast_days={w['forecast_days']}" in url
+    # le curseur J-7..J+7 doit tenir dans la série : 30 j d'historique avant J-7, 3 j de prévision après J+7
+    tl = CFG["timeline"]
+    assert w["past_days"] - tl["days_before"] >= CFG["score"]["delai"]["lookback_days"]
+    assert w["forecast_days"] - 1 - tl["days_after"] >= CFG["score"]["prevision"]["horizon_days"]
 
 
 def test_carte_html_echappe_et_avertit(tmp_path):

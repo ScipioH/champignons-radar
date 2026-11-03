@@ -90,7 +90,10 @@ def fetch_all(points: list[tuple[float, float]], wcfg: dict) -> dict[str, dict]:
     cache_dir = resolve(wcfg["cache_dir"])
     cache_dir.mkdir(parents=True, exist_ok=True)
     tag = f"{wcfg['model']}_" if wcfg.get("model") else ""
-    cache_file = cache_dir / f"weather_{tag}{date.today().isoformat()}.json"
+    # la fenêtre demandée fait partie de la clé : sinon un changement de past_days relirait des séries
+    # de mauvaise longueur et décalerait tous les indices
+    span = f"p{wcfg['past_days']}f{wcfg['forecast_days']}_"
+    cache_file = cache_dir / f"weather_{tag}{span}{date.today().isoformat()}.json"
     cache: dict[str, dict] = json.loads(cache_file.read_text(encoding="utf-8")) if cache_file.exists() else {}
 
     todo = [p for p in points if _key(*p) not in cache]

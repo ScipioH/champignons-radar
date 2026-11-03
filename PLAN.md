@@ -162,6 +162,8 @@ Plan de validation : pour chaque station de la zone avec RR/TN renseignés, comp
 - [x] Phase 1 — V0 : 20 tests verts (critères a–e), run réel du 2026-11-02 OK (437 points, 281 terrestres scorés), carte `web/index.html`
 - [x] Phase 2a — terrain : sources vérifiées/téléchargées/auditées (`SOURCES.md`) ; prétraitement `python -m radar terrain` (19 s) → 124 172 cellules de 250 m (`data/processed/terrain_250m.npz` + `terrain_meta.json` + `terrain_report.txt`) ; 61 tests verts dont une chaîne complète sur fichiers synthétiques
 - [x] Phase 2b — habitat : `config/species.yaml` (tableau validé le 2026-11-04, 3 familles, pas d'autres), `radar/habitat.py`, carte raster 250 m `web/index.html` (couches score + habitat par famille, clic = valeurs) ; critères (a)–(d) OK sur données réelles ; 78 tests verts. **(e) en attente : avis de l'utilisateur sur la carte.**
+- [x] (avancé de la phase 3, 2026-11-04) Curseur temporel J-7 → J+7 sur la carte : score final par jour (saison/exposition du mois de chaque jour), météo 40 j passés + 11 j prévus (≈ 1 300 points-requêtes/jour sur le quota), avertissements rétrospectif / prévision lointaine. Clé de cache météo corrigée (elle n'incluait pas la fenêtre demandée). Carte ~3,2 Mo. Lanceur double-clic `Radar.bat`. Fonds de carte IGN (OSM et CARTO bloqués en `file://`).
+- Extension France entière : **écartée pour l'instant** (2026-11-04, choix utilisateur) — estimée à ~10 Go de terrain, carte en tuiles, météo limitée à ~20 km par le quota Open-Meteo gratuit.
 - [ ] Phase 2c — trajet ← **prochaine étape**
 - [ ] Phase 3
 - [ ] Phase 4
@@ -192,6 +194,7 @@ Plan de validation : pour chaque station de la zone avec RR/TN renseignés, comp
 - Critères : (a) top 5 % cèpes = 91 % sol acide, 75 % châtaignier/chênes/hêtre ; (b) Gardiole lactaires 0,11 vs cèpes 0,09 — **marge faible** : la Gardiole est surtout garrigue/chêne vert, peu de pin d'Alep cartographié ; (c) Montpellier ≤ 0,001 ; (d) 3 686 cellules inconnues.
 - Habitat médian des peuplements purs (≥ 70 %) : châtaignier 0,96 (cèpes) ; pin d'Alep 0,85 (lactaires) ; chêne vert 0,39 (cèpes : 0,8 essence × 0,5 calcaire) ; hêtre 0,75.
 - Score final : 95–97 % des cellules « faible ». Deux causes : (1) **météo du jour en baisse** (médiane 50 contre 93 % « bon » le 2/11 : l'épisode du 19–20/10 sort du plateau de délai de 14 j — la « falaise » prévue) ; (2) l'habitat multiplie trois facteurs (essence × sol × altitude), ce qui pénalise les cas intermédiaires (chênaie verte sur calcaire). À juger sur le terrain avant de retoucher les poids.
+- Curseur (run du 2026-11-04) : score météo médian 83 (J-7) → 79 (J-1) → **50 (J)** → ~41-47 (J+1..J+7). Le décrochage J-1 → J est la sortie du plateau de délai (14 j après l'épisode du 19–20/10) : falaise du modèle, à confronter au terrain. Cohérence vérifiée : J-2 (2/11) redonne les 93 % « bon+ » du run réel du 2/11.
 - Point à surveiller : `exponent_habitat` = 1,0 rend le score très sélectif ; si les coins connus ressortent trop faibles, c'est le premier réglage à revoir (avec le poids calcaire des cèpes).
 
 Dépôt public : https://github.com/ScipioH/champignons-radar

@@ -181,13 +181,48 @@ def test_carte_raster_encodage_et_html(tmp_path):
     assert vals.tolist() == [100, 25, 0, R.UNKNOWN]
     px = np.frombuffer(zlib.decompress(base64.b64decode(R.pack(vals, idx))), dtype=np.uint8)
     assert px.size == idx.size and R.OUTSIDE in px and R.UNKNOWN in px
-    out = R.write(tmp_path / "w" / "index.html", layers={"h": {"label": "Habitat", "kind": "habitat",
-                                                                 "values": np.array([1.0, 0.25, 0.0, np.nan])}},
-                  idx=idx, bounds=bounds, points=[{"lat": 43.6, "lon": 3.9, "score": 50, "classe": "moyen"}],
-                  date_="2026-11-04", center=(43.6, 3.9), classes=CFG["score"]["classes"])
+    days = [{"offset": -1, "date": "2026-11-03"}, {"offset": 0, "date": "2026-11-04"}, {"offset": 1, "date": "2026-11-05"}]
+    layers = {"h": {"label": "Habitat", "kind": "habitat", "values": [np.array([1.0, 0.25, 0.0, np.nan])]},
+              "f": {"label": "Score", "kind": "final", "values": [np.array([0.1, 0.2, 0.3, np.nan])] * 3}}
+    kw = dict(idx=idx, bounds=bounds, points=[{"lat": 43.6, "lon": 3.9, "score": 50, "timeline": [40, 50, 60]}],
+              days=days, center=(43.6, 3.9), classes=CFG["score"]["classes"])
+    out = R.write(tmp_path / "w" / "index.html", layers=layers, **kw)
     html = out.read_text(encoding="utf-8")
     assert "pas de comestibilité" in html and "CC BY 4.0" in html and "BD Charm-50" in html and "__" not in html
     assert "data.geopf.fr/wmts" in html and "IGN" in html
+    assert 'id="slider"' in html and "Calcul du 2026-11-04" in html
+    import json as _json
+    data = _json.loads(html.split("const D = ")[1].split(";\nconst COLORS")[0].replace("<\\/", "</"))
+    assert len(data["layers"]["f"]["data"]) == 3 and len(data["layers"]["h"]["data"]) == 1
+    layers["f"]["values"] = layers["f"]["values"][:2]           # nombre de jours incohérent : refusé
+    with pytest.raises(ValueError, match="curseur"):
+        R.build_html(layers=layers, **kw)
+
+
+def test_meteo_interp_jours_et_point_manquant():
+    from pyproj import Transformer
+    tr = Transformer.from_crs(T.L93, "EPSG:4326", always_xy=True)
+    (lo1, lo2), (la1, la2) = tr.transform([700_000.0, 710_000.0], [6_280_000.0, 6_280_000.0])
+    pts = [{"lat": la1, "lon": lo1, "score": 20, "timeline": [10, 20, None]},
+           {"lat": la2, "lon": lo2, "score": 80, "timeline": [90, 80, 60]}]
+    it = H.MeteoInterp(pts, np.array([700_000.0, 705_000.0]), np.array([6_280_000.0, 6_280_000.0]))
+    assert it.day()[0] == pytest.approx(0.2, abs=1e-4) and it.day(1)[1] == pytest.approx(0.5)
+    assert it.day(0)[0] == pytest.approx(0.1, abs=1e-4)
+    assert it.day(2).tolist() == pytest.approx([0.6, 0.6])      # point sans valeur ignoré, pas compté comme 0
+
+
+def test_final_days_saison_du_jour(monkeypatch):
+    """Un curseur à cheval sur deux mois applique la saison de chaque jour (girolles : nov. en saison, déc. non)."""
+    t = synth_terrain()
+    from pyproj import Transformer
+    lon, lat = Transformer.from_crs(T.L93, "EPSG:4326", always_xy=True).transform(t["x"], t["y"])
+    pts = [{"lat": float(a), "lon": float(o), "score": 100, "timeline": [100, 100]} for a, o in zip(lat, lon)]
+    w = {"points": pts, "dates": ["2026-11-30", "2026-12-01"], "offsets": [0, 1]}
+    out = H.final_days(t, w, SCFG, FC, GC, CFG)
+    g = out["girolles"]
+    assert g[0][0] == pytest.approx(100.0)                                     # châtaigneraie acide, en saison
+    assert g[1][0] == pytest.approx(100.0 * SCFG["season"]["shoulder"])        # décembre : mois adjacent
+    assert np.isnan(g[0][3]) and np.isnan(g[1][3])                             # hors couverture : inconnu
 
 
 def test_pas_de_fonds_bloques_en_local():

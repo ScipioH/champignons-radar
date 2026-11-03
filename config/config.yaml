@@ -13,6 +13,10 @@ grid:
 terrain:
   spacing_m: 250          # maille habitat (phase 2a+) ; la météo reste à grid.spacing_km
 
+timeline:                 # curseur temporel de la carte (phase 3, avancé le 2026-11-04)
+  days_before: 7          # J-7 : rétrospectif, météo = analyses du modèle, pas des observations
+  days_after: 7           # J+7 : prévision, fiabilité décroissante au-delà de ~J+3
+
 availability:             # utilisé par le rapport (phase 3)
   days: [saturday, sunday, holiday, weekday_evening]
   weekday_depart_hour: 17.0
@@ -21,8 +25,8 @@ availability:             # utilisé par le rapport (phase 3)
 
 weather:
   api_url: https://api.open-meteo.com/v1/forecast
-  past_days: 30
-  forecast_days: 7
+  past_days: 40           # 30 j d'historique nécessaires au score + 7 j de curseur rétrospectif (+ marge)
+  forecast_days: 11       # J..J+10 : le score de J+7 a besoin de 3 j de prévision après lui
   batch_size: 50          # points par requête
   pause_seconds: 1.5      # pause entre lots
   max_retries: 4
