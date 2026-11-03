@@ -2,7 +2,7 @@
 
 Indice météo de **pousse** (jamais de comestibilité) autour de Montpellier. Voir `PLAN.md` pour le plan, le statut et les limites.
 
-**Le plus simple (Windows)** : double-cliquer sur `Radar.bat` (installe tout au premier lancement, puis met à jour la carte et l'ouvre).
+**Le plus simple (Windows)** : double-cliquer sur `Radar.bat` (installe tout au premier lancement, puis met à jour la carte et l'ouvre) ; `Journal.bat` ouvre la saisie des sorties (données gardées sur le PC, `data/journal.db`).
 
 ```
 python -m venv .venv

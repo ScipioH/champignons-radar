@@ -36,13 +36,22 @@ def _http_get_json(url: str, max_retries: int) -> object:
             with urllib.request.urlopen(req, timeout=60) as resp:
                 return json.load(resp)
         except urllib.error.HTTPError as e:
-            if e.code == 429 and attempt < max_retries:
-                log.warning("429 reçu, nouvelle tentative dans %.0fs", delay)
+            # 429 (quota/minute) et 5xx (serveur) : passagers, on retente ; 4xx : erreur de requête, on remonte
+            if (e.code == 429 or e.code >= 500) and attempt < max_retries:
+                log.warning("HTTP %d reçu, nouvelle tentative dans %.0fs", e.code, delay)
                 time.sleep(delay)
                 delay *= 2
                 continue
             body = e.read().decode("utf-8", "replace")[:300]
             raise RuntimeError(f"Open-Meteo HTTP {e.code}: {body}") from e
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            # coupure réseau / délai dépassé (constaté en CI : « handshake operation timed out »)
+            if attempt < max_retries:
+                log.warning("réseau : %s ; nouvelle tentative dans %.0fs", e, delay)
+                time.sleep(delay)
+                delay *= 2
+                continue
+            raise RuntimeError(f"Open-Meteo injoignable après {max_retries + 1} essais : {e}") from e
     raise RuntimeError("Open-Meteo : échec après retries")
 
 

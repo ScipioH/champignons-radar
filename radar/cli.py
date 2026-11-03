@@ -172,6 +172,31 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_journal(args: argparse.Namespace) -> int:
+    from radar import journal as J
+
+    cfg = load_config(args.config)
+    if args.action == "ouvrir":
+        from radar import journal_app
+
+        journal_app.serve(port=args.port)
+        return 0
+    with J.session() as con:
+        if args.action == "ajouter":
+            r = J.add(con, cfg, {"date": args.date, "lat": args.lat, "lon": args.lon, "famille": args.famille,
+                                 "resultat": args.resultat, "note": args.note})
+            print(f"Sortie n° {r['id']} enregistrée ; score du modèle : {r['score']} ({r['classe']})"
+                  + (f" — non calculé : {r['erreur']}" if r["erreur"] else ""))
+        elif args.action == "liste":
+            for r in J.rows(con):
+                print(f"{r['id']:4} {r['date']} {r['famille']:10} résultat {r['resultat']} — modèle {r['score']} "
+                      f"({r['classe']}) {r['note']}")
+        elif args.action == "recalculer":
+            print(f"{J.recompute(con, cfg)} sortie(s) recalculée(s) avec le modèle actuel.")
+        print(J.evaluation_text(J.evaluate(con, cfg)))
+    return 0
+
+
 def cmd_access(args: argparse.Namespace) -> int:
     from radar import access
 
@@ -201,6 +226,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--quiet", action="store_true", help="n'affiche ni zones ni trajets (journaux CI publics)")
     p.add_argument("--month", type=int, default=0)
     p.set_defaults(func=cmd_report)
+    p = sub.add_parser("journal", help="journal de sorties : page de saisie locale, liste, évaluation du modèle")
+    p.add_argument("action", nargs="?", default="ouvrir", choices=["ouvrir", "ajouter", "liste", "evaluer", "recalculer"])
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--date")
+    p.add_argument("--lat", type=float)
+    p.add_argument("--lon", type=float)
+    p.add_argument("--famille", default="cepes")
+    p.add_argument("--resultat", type=int, help="0 rien, 1 quelques-uns, 2 bonne cueillette, 3 excellente")
+    p.add_argument("--note", default="")
+    p.set_defaults(func=cmd_journal)
     p = sub.add_parser("access", help="temps de trajet réels (OSRM) + zones protégées -> data/processed (une fois)")
     p.set_defaults(func=cmd_access)
     p = sub.add_parser("score", help="météo + habitat 250 m -> score final et carte web/index.html")

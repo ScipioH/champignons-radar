@@ -69,6 +69,28 @@ def test_quota_garde_fou(monkeypatch, wcfg):
         weather.fetch_all([(43.0, 3.0), (43.1, 3.0), (43.2, 3.0)], wcfg)
 
 
+def test_retente_sur_coupure_reseau_et_5xx(monkeypatch):
+    import io
+    import urllib.error
+    calls = []
+
+    def flaky(req, timeout):
+        calls.append(1)
+        if len(calls) == 1:
+            raise urllib.error.URLError("_ssl.c:1015: The handshake operation timed out")
+        if len(calls) == 2:
+            raise urllib.error.HTTPError("u", 503, "busy", {}, io.BytesIO(b""))
+        return io.BytesIO(b'{"ok": true}')
+    monkeypatch.setattr(weather.urllib.request, "urlopen", flaky)
+    monkeypatch.setattr(weather.time, "sleep", lambda s: None)
+    assert weather._http_get_json("https://x", 3) == {"ok": True} and len(calls) == 3
+    calls.clear()
+    monkeypatch.setattr(weather.urllib.request, "urlopen",
+                        lambda r, timeout: (_ for _ in ()).throw(urllib.error.URLError("down")))
+    with pytest.raises(RuntimeError, match="injoignable"):
+        weather._http_get_json("https://x", 2)
+
+
 def test_reponse_incoherente(monkeypatch, wcfg):
     monkeypatch.setattr(weather, "_http_get_json", lambda u, r: [fake_entry(0)])
     with pytest.raises(RuntimeError):
