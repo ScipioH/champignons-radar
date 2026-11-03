@@ -4,21 +4,26 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-# Fonds de carte. PAS les tuiles tile.openstreetmap.org : leur politique d'usage bloque les pages ouvertes en
-# local (file://, sans Referer) -> « Access blocked ». CARTO (défaut) et OpenTopoMap (relief) les acceptent ;
-# usage personnel modéré, attributions obligatoires.
-# Script JS à insérer après la création de `map` ; définit BASES (dict nom -> couche), la 1re est affichée.
+# Fonds de carte : la page est ouverte en local (file://, sans Referer). Constaté le 2026-11-04 :
+#  - tile.openstreetmap.org -> « Access blocked » (politique d'usage OSM) ;
+#  - CARTO basemaps -> tuile « API KEY REQUIRED ».
+# Retenus (tuiles vérifiées visuellement sans Referer) : Géoplateforme IGN (Licence Ouverte 2.0, sans clé) et
+# OpenTopoMap (CC-BY-SA, serveur bénévole : usage personnel modéré).
+# Script JS à insérer après la création de `map` ; définit BASES (nom -> couche), la 1re est affichée.
+_IGN = ("https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={layer}&STYLE=normal"
+        "&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT={fmt}")
 TILES_JS = """
+const IGN_ATTR = '&copy; <a href="https://www.ign.fr/">IGN</a> Géoplateforme';
 const BASES = {
-  'Plan (CARTO)': L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    {maxZoom: 19, subdomains: 'abcd',
-     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'}),
+  'Plan IGN': L.tileLayer('%s', {maxZoom: 19, attribution: IGN_ATTR}),
+  'Photo aérienne IGN': L.tileLayer('%s', {maxZoom: 19, attribution: IGN_ATTR}),
   'Relief (OpenTopoMap)': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
     {maxZoom: 17, subdomains: 'abc',
      attribution: '&copy; OpenStreetMap, SRTM | style &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)'}),
 };
-BASES['Plan (CARTO)'].addTo(map);
-"""
+BASES['Plan IGN'].addTo(map);
+""" % (_IGN.replace("{layer}", "GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2").replace("{fmt}", "image/png"),
+       _IGN.replace("{layer}", "ORTHOIMAGERY.ORTHOPHOTOS").replace("{fmt}", "image/jpeg"))
 
 COLORS = {"faible": "#b0b0b0", "moyen": "#f2c14e", "bon": "#7cb342", "très bon": "#1b7a3d", "indéterminé": "#555555"}
 

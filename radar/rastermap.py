@@ -81,7 +81,7 @@ TEMPLATE = """<!doctype html>
 = hypothèses). Respecter la vigilance Météo-France, la chasse, les propriétés privées et la réglementation locale.
 Météo du __DATE__ (maille 5 km, lissée : pas plus précise à 250 m). Habitat 2018 (BD Forêt).<br>
 <small>Météo : <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0) · Forêt : IGN BD Forêt V2 ·
-Géologie : BRGM BD Charm-50 · Relief : Copernicus GLO-30 © DLR/Airbus (ESA) · Fond : OpenStreetMap, CARTO / OpenTopoMap</small></div>
+Géologie : BRGM BD Charm-50 · Relief : Copernicus GLO-30 © DLR/Airbus (ESA) · Fond : IGN Géoplateforme / OpenTopoMap</small></div>
 <div id="map"></div><div id="legend"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>

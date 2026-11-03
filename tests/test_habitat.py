@@ -187,12 +187,13 @@ def test_carte_raster_encodage_et_html(tmp_path):
                   date_="2026-11-04", center=(43.6, 3.9), classes=CFG["score"]["classes"])
     html = out.read_text(encoding="utf-8")
     assert "pas de comestibilité" in html and "CC BY 4.0" in html and "BD Charm-50" in html and "__" not in html
-    assert "basemaps.cartocdn.com" in html and "CARTO" in html
+    assert "data.geopf.fr/wmts" in html and "IGN" in html
 
 
-def test_pas_de_tuiles_osm_bloquees_en_local():
-    """tile.openstreetmap.org bloque les pages ouvertes en file:// (« Access blocked », 2026-11-04)."""
+def test_pas_de_fonds_bloques_en_local():
+    """En file:// : OSM -> « Access blocked », CARTO -> « API KEY REQUIRED » (constaté le 2026-11-04)."""
     from radar import mapgen
     v0 = mapgen.build_html({"date": "2026-11-04", "points": []}, (43.6, 3.9), calibrated=False)
-    assert "tile.openstreetmap.org" not in v0 and "tile.openstreetmap.org" not in R.TEMPLATE + mapgen.TILES_JS
-    assert "__TILES__" not in v0 and "BASES" in v0
+    for page in (v0, R.TEMPLATE + mapgen.TILES_JS):
+        assert "tile.openstreetmap.org" not in page and "cartocdn" not in page
+    assert "__TILES__" not in v0 and "TILEMATRIX={z}&TILEROW={y}&TILECOL={x}" in v0 and "PLANIGNV2" in v0

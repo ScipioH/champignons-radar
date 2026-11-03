@@ -22,4 +22,6 @@ sont dans `config/sources.yaml` ; les SHA-256 réels des fichiers téléchargés
 
 ## Mentions à reprendre sur la carte et le rapport
 
-Données météo : Open-Meteo.com (CC BY 4.0). Forêt : © IGN – BD Forêt® (Licence Ouverte 2.0). Géologie : © BRGM – BD Charm-50 (Licence Ouverte 2.0). Relief : © ESA / Copernicus DEM GLO-30. Observations : © Météo-France (Licence Ouverte 2.0).
+Données météo : Open-Meteo.com (CC BY 4.0). Forêt : © IGN – BD Forêt® (Licence Ouverte 2.0). Géologie : © BRGM – BD Charm-50 (Licence Ouverte 2.0). Relief : © ESA / Copernicus DEM GLO-30. Observations : © Météo-France (Licence Ouverte 2.0). Fonds de carte : © IGN Géoplateforme – Plan IGN et photographies aériennes (Licence Ouverte 2.0, sans clé) ; © OpenStreetMap / OpenTopoMap (CC-BY-SA).
+
+**Fonds de carte écartés** (la carte est ouverte en local, `file://`, sans en-tête Referer ; constaté le 2026-11-04) : `tile.openstreetmap.org` renvoie « Access blocked » (politique d'usage OSM) ; CARTO basemaps renvoie une tuile « API KEY REQUIRED ». Vérifier visuellement une tuile, pas seulement le code HTTP (200 dans les deux cas).

@@ -16,7 +16,7 @@
 = hypothèses). Respecter la vigilance Météo-France, la chasse, les propriétés privées et la réglementation locale.
 Météo du 2026-11-04 (maille 5 km, lissée : pas plus précise à 250 m). Habitat 2018 (BD Forêt).<br>
 <small>Météo : <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0) · Forêt : IGN BD Forêt V2 ·
-Géologie : BRGM BD Charm-50 · Relief : Copernicus GLO-30 © DLR/Airbus (ESA) · Fond : OpenStreetMap, CARTO / OpenTopoMap</small></div>
+Géologie : BRGM BD Charm-50 · Relief : Copernicus GLO-30 © DLR/Airbus (ESA) · Fond : IGN Géoplateforme / OpenTopoMap</small></div>
 <div id="map"></div><div id="legend"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -24,15 +24,15 @@ const D = {"nx": 480, "ny": 400, "bounds": [[43.25408211486594, 3.13150774369603
 const COLORS = {"faible": "#b0b0b0", "moyen": "#f2c14e", "bon": "#7cb342", "très bon": "#1b7a3d", "indéterminé": "#555555"};
 const map = L.map('map').setView([43.6108, 3.8767], 9);
 
+const IGN_ATTR = '&copy; <a href="https://www.ign.fr/">IGN</a> Géoplateforme';
 const BASES = {
-  'Plan (CARTO)': L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    {maxZoom: 19, subdomains: 'abcd',
-     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'}),
+  'Plan IGN': L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png', {maxZoom: 19, attribution: IGN_ATTR}),
+  'Photo aérienne IGN': L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg', {maxZoom: 19, attribution: IGN_ATTR}),
   'Relief (OpenTopoMap)': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
     {maxZoom: 17, subdomains: 'abc',
      attribution: '&copy; OpenStreetMap, SRTM | style &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)'}),
 };
-BASES['Plan (CARTO)'].addTo(map);
+BASES['Plan IGN'].addTo(map);
 
 L.control.layers(BASES, {}, {position: 'bottomright'}).addTo(map);
 async function inflate(b64) {
