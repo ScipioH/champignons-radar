@@ -8,3 +8,8 @@ data/cache/
 data/processed/
 data/journal.db
 *.sqlite
+
+# Sorties générées : non publiées (le périmètre de trajet peut révéler le point de départ = domicile)
+web/index.html
+web/v0.html
+data/out/

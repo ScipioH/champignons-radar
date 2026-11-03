@@ -6,6 +6,8 @@ import json
 import logging
 import sys
 
+import numpy as np
+
 from radar import grid, mapgen, score, weather
 from radar.config import load_config, resolve
 
@@ -83,6 +85,16 @@ def cmd_score(args: argparse.Namespace) -> int:
                                 "values": [v / 100.0 for v in res["final_days"][k]]}
     for k, fam in scfg["families"].items():
         layers[f"hab_{k}"] = {"label": f"Habitat — {fam['label']}", "kind": "habitat", "values": [res["hab"][k]]}
+    if "access" in res:
+        mx = cfg["availability"]["max_travel_minutes"]
+        a, am = res["access"], res["access_meta"]
+        tr = np.where(a["travel_min"] <= mx, a["travel_min"], -1.0)
+        layers["travel"] = {"label": f"Temps de trajet (≤ {mx} min)", "kind": "travel", "values": [tr], "scale": mx}
+        f = np.array(am["factors"])
+        excl = a["protected"][:, f < 1].sum(axis=1)
+        reg = a["protected"][:, f >= 1].sum(axis=1)
+        layers["protect"] = {"label": "Zones protégées", "kind": "protect",
+                             "values": [np.where(excl >= 0.5, 1.0, np.where(reg >= 0.5, 0.5, 0.0))]}
     idx, bounds = rastermap.display_grid(res["t"], res["meta"]["grid"])
     days = [{"offset": o, "date": d} for o, d in zip(result["offsets"], result["dates"])]
     html = rastermap.write(resolve("web/index.html"), layers=layers, idx=idx, bounds=bounds, points=result["points"],
@@ -143,6 +155,14 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_access(args: argparse.Namespace) -> int:
+    from radar import access
+
+    print(access.run(load_config(args.config)))
+    print("\nSorties : data/processed/access_250m.npz, access_meta.json, access_report.txt")
+    return 0
+
+
 def cmd_terrain(args: argparse.Namespace) -> int:
     from radar import terrain
 
@@ -158,6 +178,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("v0", help="météo + score + carte V0")
     p.add_argument("--limit", type=int, default=0, help="limiter le nombre de points (debug)")
     p.set_defaults(func=cmd_v0)
+    p = sub.add_parser("access", help="temps de trajet réels (OSRM) + zones protégées -> data/processed (une fois)")
+    p.set_defaults(func=cmd_access)
     p = sub.add_parser("score", help="météo + habitat 250 m -> score final et carte web/index.html")
     p.add_argument("--month", type=int, default=0, help="mois simulé (saison/exposition), défaut : mois courant")
     p.set_defaults(func=cmd_score)

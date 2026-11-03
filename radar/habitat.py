@@ -175,8 +175,11 @@ def meteo_on_cells(points: list[dict], cx: np.ndarray, cy: np.ndarray) -> np.nda
 
 def final_score(meteo: np.ndarray, habitat: np.ndarray, season: float, scfg_score: dict,
                 access: np.ndarray | float = 1.0) -> np.ndarray:
+    """access : facteur 0-1, ou < 0 = hors périmètre de trajet -> score -1 (retiré de la carte)."""
     a, b = scfg_score["exponent_meteo"], scfg_score["exponent_habitat"]
-    return 100.0 * np.clip(meteo, 0, 1) ** a * habitat ** b * season * access   # NaN (inconnu) propagé
+    acc = np.asarray(access, dtype=np.float64)
+    s = 100.0 * np.clip(meteo, 0, 1) ** a * habitat ** b * season * np.clip(acc, 0, 1)  # NaN (inconnu) propagé
+    return np.where(acc < 0, -1.0, s)
 
 
 # --------------------------------------------------------------------------- critères de fin 2b
@@ -247,7 +250,7 @@ def describe(t: dict, hab: dict, scfg: dict, fclasses: list[str], month: int) ->
 
 
 def final_days(t: dict, weather: dict, scfg: dict, fclasses: list[str], gclasses: list[str], cfg: dict,
-               month_override: int | None = None) -> dict[str, list[np.ndarray]]:
+               month_override: int | None = None, access: np.ndarray | float = 1.0) -> dict[str, list[np.ndarray]]:
     """Score final de chaque famille pour chaque jour du curseur (saison et exposition du mois de CE jour)."""
     interp = MeteoInterp(weather["points"], t["x"], t["y"])
     hab_by_month: dict[int, dict[str, np.ndarray]] = {}
@@ -259,7 +262,7 @@ def final_days(t: dict, weather: dict, scfg: dict, fclasses: list[str], gclasses
         meteo = interp.day(i)
         for k, fam in scfg["families"].items():
             s = season_factor(m, fam["season_months"], scfg["season"])
-            out[k].append(final_score(meteo, hab_by_month[m][k], s, cfg["score"]))
+            out[k].append(final_score(meteo, hab_by_month[m][k], s, cfg["score"], access))
     return out
 
 
@@ -275,25 +278,42 @@ def run(cfg: dict, weather: dict | None, month: int | None = None) -> dict:
     res: dict = {"t": t, "meta": meta, "hab": hab, "criteria": crit, "month": month, "scfg": scfg, "final": {}}
     lines = [f"# Habitat & score final — {date.today().isoformat()} (mois {month})", "", "## Habitat par famille"]
     lines += describe(t, hab, scfg, fclasses, month)
+    # Accessibilité (phase 2c) : facteur par cellule, -1 = hors périmètre de trajet
+    from radar import access as A
+    acc_data = A.load()
+    acc: np.ndarray | float = 1.0
+    if acc_data is None:
+        lines += ["", "⚠️ Accessibilité non calculée (`python -m radar access`) : périmètre = disque à vol d'oiseau."]
+    else:
+        a, am = acc_data
+        acc = A.access_factor(a["travel_min"], a["protected"], np.array(am["factors"]),
+                              cfg["availability"]["max_travel_minutes"])
+        res["access"], res["access_meta"] = a, am
+        res["access_factor"] = acc
+        mx = cfg["availability"]["max_travel_minutes"]
+        bad = int(((acc >= 0) & ~(a["travel_min"] <= mx)).sum())
+        crit.append({"id": "2c", "ok": bad == 0,
+                     "detail": f"{int((acc < 0).sum())} cellules hors périmètre (> {mx} min) retirées ; "
+                               f"cellules affichées au-delà du périmètre : {bad}"})
     if weather is not None:
         weather_points = weather["points"]
         meteo = meteo_on_cells(weather_points, t["x"], t["y"])
         res["meteo"] = meteo
         if weather.get("dates"):
-            res["final_days"] = final_days(t, weather, scfg, fclasses, gclasses, cfg, month_override)
+            res["final_days"] = final_days(t, weather, scfg, fclasses, gclasses, cfg, month_override, acc)
             res["dates"], res["offsets"] = weather["dates"], weather["offsets"]
-        lines += ["", "## Score final (classes sur cellules connues)"]
+        lines += ["", "## Score final (classes sur cellules connues et dans le périmètre)"]
         for k, h in hab.items():
             fam = scfg["families"][k]
             s = season_factor(month, fam["season_months"], scfg["season"])
-            f = final_score(meteo, h, s, cfg["score"])
+            f = final_score(meteo, h, s, cfg["score"], acc)
             res["final"][k] = f
-            v = f[~np.isnan(f)]
+            v = f[~np.isnan(f) & (f >= 0)]
             b = cfg["score"]["classes"]
             lines.append(f"- {k} : très bon {(v >= b['tres_bon']).mean():.1%}, bon "
                          f"{((v >= b['bon']) & (v < b['tres_bon'])).mean():.1%}, moyen "
                          f"{((v >= b['moyen']) & (v < b['bon'])).mean():.1%}, faible {(v < b['moyen']).mean():.1%}")
-    lines += ["", "## Critères de fin 2b (cohérence du code avec les hypothèses, pas validation des hypothèses)"]
+    lines += ["", "## Critères de fin 2b/2c (cohérence du code avec les hypothèses, pas validation des hypothèses)"]
     lines += [f"- ({c['id']}) {'OK' if c['ok'] else 'ÉCHEC'} — {c['detail']}" for c in crit]
     res["report"] = "\n".join(lines)
     out = resolve("data/processed")

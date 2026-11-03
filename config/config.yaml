@@ -23,6 +23,25 @@ availability:             # utilisé par le rapport (phase 3)
   max_travel_minutes: 60
   min_forage_minutes: 60  # hypothèse : durée minimale utile de cueillette avec la lumière du jour
 
+access:                   # phase 2c (calcul unique : `python -m radar access`)
+  # Départ = centre ci-dessus, SAUF si RADAR_HOME_LAT / RADAR_HOME_LON sont définis (fichier .env local ou
+  # secrets GitHub) : jamais d'adresse personnelle dans ce fichier (dépôt public).
+  osrm_url: https://router.project-osrm.org   # serveur de démonstration OSRM : usage modéré, 1 requête/s max
+  sample_km: 2            # échantillonnage des temps de trajet (interpolés ensuite sur les cellules 250 m)
+  batch: 100              # destinations par requête
+  pause_seconds: 1.2
+  walk_kmh: 4.0           # du point d'échantillon à la route la plus proche : à pied
+  protected:
+    wfs_url: https://data.geopf.fr/wfs/ows   # Géoplateforme IGN, couches PatriNat (MNHN/OFB)
+    # factor : multiplicateur du score dans la zone. 0 = exclu par prudence (la cueillette y est souvent
+    # interdite, mais c'est le règlement de CHAQUE site qui fait foi) ; 1 = signalé seulement.
+    layers:
+      rnn: {typename: "patrinat_rnn:rnn", factor: 0.0, label: "Réserve naturelle nationale"}
+      rnr: {typename: "patrinat_rnr:rnr", factor: 0.0, label: "Réserve naturelle régionale"}
+      apb: {typename: "patrinat_apb:apb", factor: 0.0, label: "Arrêté de protection de biotope"}
+      pn_coeur: {typename: "patrinat_pn:parc_national", where: {zone: "Cœur"}, factor: 1.0,
+                 label: "Cœur du Parc national des Cévennes (cueillette réglementée)"}
+
 weather:
   api_url: https://api.open-meteo.com/v1/forecast
   past_days: 40           # 30 j d'historique nécessaires au score + 7 j de curseur rétrospectif (+ marge)

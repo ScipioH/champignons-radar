@@ -22,11 +22,12 @@ from radar.terrain import L93
 UNKNOWN, OUTSIDE = 254, 255
 
 
-def encode_values(v: np.ndarray) -> np.ndarray:
-    """0-1 -> 0-100 (uint8) ; NaN -> UNKNOWN."""
+def encode_values(v: np.ndarray, scale: float = 1.0) -> np.ndarray:
+    """v / scale (0-1) -> 0-100 (uint8) ; NaN -> UNKNOWN ; négatif (hors périmètre) -> OUTSIDE."""
     out = np.full(v.shape, UNKNOWN, dtype=np.uint8)
     ok = ~np.isnan(v)
-    out[ok] = np.round(np.clip(v[ok], 0, 1) * 100).astype(np.uint8)
+    out[ok] = np.round(np.clip(v[ok] / scale, 0, 1) * 100).astype(np.uint8)
+    out[ok & (v < 0)] = OUTSIDE
     return out
 
 
@@ -124,6 +125,21 @@ function colorHab(v) {
   const t = v / 100;
   return [Math.round(240 - 220*t), Math.round(230 - 120*t), Math.round(140 - 110*t), Math.round(80 + 150*t)];
 }
+function colorTravel(v) {   // v = minutes / scale x 100
+  const t = v / 100;
+  return [Math.round(40 + 200*t), Math.round(120 + 60*(1-t)), Math.round(200 - 160*t), 150];
+}
+function colorProtect(v) {  // 50 = réglementé, 100 = exclu par prudence
+  return v >= 75 ? [200, 30, 30, 150] : v >= 25 ? [40, 90, 200, 110] : [0, 0, 0, 0];
+}
+const COLORF = {final: colorFinal, habitat: colorHab, travel: colorTravel, protect: colorProtect};
+function fmt(k, v) {
+  const l = D.layers[k];
+  if (l.kind === 'final') return v + ' (' + classOf(v) + ')';
+  if (l.kind === 'travel') return Math.round(v / 100 * l.scale) + ' min';
+  if (l.kind === 'protect') return v >= 75 ? 'zone protégée (exclue par prudence)' : v >= 25 ? 'cueillette réglementée' : 'non';
+  return (v / 100).toFixed(2);
+}
 const dayOf = name => D.layers[name].data.length > 1 ? day : 0;   // l'habitat ne dépend pas du jour
 const VALUES = {}, URLS = {};
 async function values(name, d) {
@@ -137,7 +153,7 @@ async function url(name, d) {
   const vals = await values(name, d);
   const cv = document.createElement('canvas'); cv.width = D.nx; cv.height = D.ny;
   const ctx = cv.getContext('2d'); const img = ctx.createImageData(D.nx, D.ny);
-  const f = D.layers[name].kind === 'final' ? colorFinal : colorHab;
+  const f = COLORF[D.layers[name].kind];
   for (let i = 0; i < vals.length; i++) {
     const v = vals[i];
     img.data.set(v === 255 ? [0,0,0,0] : v === 254 ? [120,120,120,90] : f(v), 4*i);
@@ -146,9 +162,12 @@ async function url(name, d) {
   return URLS[key] = cv.toDataURL();
 }
 function legend(kind) {
-  let h = kind === 'final'
-    ? '<b>Score final</b><br>' + ['très bon','bon','moyen','faible'].map(k => '<i style="background:'+COLORS[k]+'"></i>'+k).join('<br>')
-    : '<b>Habitat (0-1)</b> <small>(indépendant du jour)</small><br><i style="background:#dce48a"></i>faible<br><i style="background:#14501e"></i>fort';
+  let h = {
+    final: '<b>Score final</b><br>' + ['très bon','bon','moyen','faible'].map(k => '<i style="background:'+COLORS[k]+'"></i>'+k).join('<br>'),
+    habitat: '<b>Habitat (0-1)</b> <small>(indépendant du jour)</small><br><i style="background:#dce48a"></i>faible<br><i style="background:#14501e"></i>fort',
+    travel: '<b>Temps de trajet</b><br><i style="background:#28b4c8"></i>court<br><i style="background:#f0782a"></i>~ limite',
+    protect: '<b>Zones protégées</b><br><i style="background:#c81e1e"></i>exclue par prudence (règlement à vérifier)<br><i style="background:#285ac8"></i>cueillette réglementée',
+  }[kind];
   h += '<br><i style="background:#787878"></i>inconnu (hors Gard/Hérault)<br><small>Clic : valeurs de la cellule</small>';
   document.getElementById('legend').innerHTML = h;
 }
@@ -214,8 +233,7 @@ async function refresh() {
     const rows = ['<b>' + dayText(day) + '</b>'];
     for (const k of Object.keys(D.layers)) {
       const v = (await values(k, dayOf(k)))[i * D.nx + j];
-      rows.push(D.layers[k].label + ' : ' + (v === 255 ? 'hors zone' : v === 254 ? 'inconnu' :
-        (D.layers[k].kind === 'final' ? v + ' (' + classOf(v) + ')' : (v / 100).toFixed(2))));
+      rows.push(D.layers[k].label + ' : ' + (v === 255 ? 'hors périmètre' : v === 254 ? 'inconnu' : fmt(k, v)));
     }
     L.popup().setLatLng(e.latlng).setContent(rows.join('<br>')).openOn(map);
   });
@@ -238,8 +256,8 @@ def build_html(layers: dict, idx: np.ndarray, bounds, points: list[dict], days: 
     data = {
         "nx": int(idx.shape[1]), "ny": int(idx.shape[0]), "bounds": bounds, "classes": classes, "days": days,
         "points": [{k: p.get(k) for k in ("lat", "lon", "score", "timeline")} for p in points],
-        "layers": {n: {"label": l["label"], "kind": l["kind"],
-                       "data": [pack(encode_values(v), idx) for v in l["values"]]}
+        "layers": {n: {"label": l["label"], "kind": l["kind"], "scale": l.get("scale", 1.0),
+                       "data": [pack(encode_values(v, l.get("scale", 1.0)), idx) for v in l["values"]]}
                    for n, l in layers.items()},
     }
     html = TEMPLATE
