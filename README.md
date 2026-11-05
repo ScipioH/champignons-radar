@@ -21,4 +21,7 @@ Email : copier `.env.example` en `.env` (local) ou créer les mêmes secrets Git
 automatique (`.github/workflows/daily.yml`). Rien de personnel dans le dépôt (public).
 
 Tous les seuils (`config/config.yaml`) et poids d'habitat (`config/species.yaml`) sont des hypothèses non calibrées.
-La carte charge Leaflet et les tuiles OpenStreetMap en ligne.
+La carte charge Leaflet et les fonds IGN / OpenTopoMap en ligne.
+
+Documentation : [méthode de calcul de l'indicateur](docs/METHODE.md) et [pistes d'amélioration](docs/AMELIORATIONS.md),
+aussi en PDF dans `docs/pdf/` (régénérer : `python tools/md2pdf.py docs/METHODE.md docs/AMELIORATIONS.md`).
