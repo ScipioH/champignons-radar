@@ -65,8 +65,33 @@ def comp_temp(tmin: list, idx: int, cfg: dict) -> float | None:
     return ramp(sum(vals) / len(vals), c["zero_tmin"], c["ideal_tmin"])
 
 
-def comp_secheresse(precip: list, idx: int, trig_idx: int | None, cfg: dict) -> float:
+def soil_ratio(precip: list, et0: list | None, idx: int, cfg: dict) -> float | None:
+    """Réserve d'eau de surface (0-1) au jour idx : bilan quotidien « seau » depuis le début de la série.
+
+    W = min(W + pluie, capacité) − coef × ET0, borné à 0. Départ à init_ratio × capacité ; l'état initial est
+    oublié après quelques semaines (pluies et évaporation). None si l'ET0 manque (repli sur l'ancienne mesure).
+    """
     c = cfg["secheresse"]
+    if not et0 or len(et0) <= idx:
+        return None
+    vals = et0[: idx + 1]
+    if sum(v is None for v in vals) > 0.1 * len(vals):
+        return None
+    cap = float(c["bucket_mm"])
+    w = c["init_ratio"] * cap
+    for i in range(idx + 1):
+        e = et0[i] if et0[i] is not None else 0.0
+        w = max(0.0, min(cap, w + _p(precip, i)) - c["et_coef"] * float(e))
+    return w / cap
+
+
+def comp_secheresse(precip: list, idx: int, trig_idx: int | None, cfg: dict, et0: list | None = None) -> float:
+    """Le sol est-il resté humide ? Bilan d'eau (pluie − évaporation) si l'ET0 est disponible, sinon repli :
+    pluie moyenne par jour depuis la pluie déclenchante."""
+    c = cfg["secheresse"]
+    r = soil_ratio(precip, et0, idx, cfg)
+    if r is not None:
+        return ramp(r, c["dry_ratio"], c["wet_ratio"], c["min_value"], 1.0)
     if trig_idx is None:
         return c["min_value"]
     days = max(1, idx - trig_idx)
@@ -112,8 +137,10 @@ def classify(score100: float, cfg: dict) -> str:
     return "faible"
 
 
-def score_point(precip: list, tmin: list, idx: int, altitude: float | None, cfg: dict) -> dict:
+def score_point(precip: list, tmin: list, idx: int, altitude: float | None, cfg: dict,
+                et0: list | None = None) -> dict:
     """Score météo 0-100 pour le jour d'indice idx. Les jours > idx sont des prévisions.
+    et0 : évapotranspiration quotidienne (mm), pour le bilan d'eau ; facultative (repli si absente).
 
     Moyenne géométrique pondérée avec plancher (un facteur nul n'écrase pas tout),
     multipliée par un facteur gel doux. Les composantes indisponibles (None) sont
@@ -127,7 +154,7 @@ def score_point(precip: list, tmin: list, idx: int, altitude: float | None, cfg:
         "pluie": comp_pluie(precip, idx, cfg),
         "delai": comp_delai(days_since, cfg),
         "temp": comp_temp(tmin, idx, cfg),
-        "secheresse": comp_secheresse(precip, idx, trig_idx, cfg),
+        "secheresse": comp_secheresse(precip, idx, trig_idx, cfg, et0),
         "prevision": comp_prevision(precip, idx, cfg),
     }
     floor = cfg["floor"]
@@ -153,4 +180,5 @@ def score_point(precip: list, tmin: list, idx: int, altitude: float | None, cfg:
         "gel_nights": nights,
         "days_since_trigger": days_since,
         "rain_15d_mm": round(sum(_p(precip, i) for i in range(max(0, idx - 14), idx + 1)), 1),
+        "soil_ratio": None if (sr := soil_ratio(precip, et0, idx, cfg)) is None else round(sr, 3),
     }

@@ -38,8 +38,12 @@ Classes affichées : **faible** < 35 ≤ **moyen** < 55 ≤ **bon** < 75 ≤ **t
 
 ## 1. Score météo (par point de la grille 5 km)
 
-Source : Open-Meteo (modèle « best match »), séries quotidiennes de pluie et de température minimale, 40 jours
-d'historique et 10 jours de prévision. Code : `radar/score.py`.
+Source : Open-Meteo, séries quotidiennes de pluie, de température minimale et d'évapotranspiration de référence
+(ET0), avec 40 jours d'historique et 10 jours de prévision. Code : `radar/score.py`, `radar/weather.py`.
+
+**Modèle météo** : modèle principal **Météo-France** (`meteofrance_seamless`, AROME 1,3 km + ARPEGE), retenu le
+2026-11-07 après contrôle sur les stations (§8, « Contrôle des pluies »). Il ne prévoit que jusqu'à J+3 ; au-delà, et pour tout jour sans
+valeur, la série est complétée jour par jour par le modèle « best match » d'Open-Meteo.
 
 ### 1.1 La pluie déclenchante
 
@@ -56,13 +60,31 @@ Toutes sont des rampes linéaires entre des seuils (plateau = 1).
 | **pluie** | 0,30 | meilleur cumul sur 2 jours dans les 15 derniers jours | 0 sous 10 mm → 1 à 20 mm → plateau jusqu'à 60 mm → redescend à 0,5 à 150 mm (sols lessivés, ravinés) |
 | **délai** | 0,25 | jours écoulés depuis la pluie déclenchante | 0 jusqu'à 4 j → 1 à 8 j → plateau jusqu'à 14 j → 0 à 35 j ; 0 s'il n'y a pas eu de pluie déclenchante |
 | **température** | 0,20 | moyenne des minimales des 7 derniers jours | 0 à 3 °C ou moins → 1 à 8 °C ou plus |
-| **sécheresse** | 0,15 | pluie moyenne par jour **depuis** la pluie déclenchante (le sol reste-t-il humide ?) | 0,4 à 0 mm/j → 1 à 1 mm/j ou plus ; 0,4 sans pluie déclenchante |
+| **sécheresse** | 0,15 | réserve d'eau du sol au jour J, par bilan pluie − évaporation (§1.3) | 0,4 si la réserve est à 10 % ou moins → 1 à partir de 50 % |
 | **prévision** | 0,10 | cumul de pluie prévu sur les 3 jours suivants | 0,85 à sec → 1 de 5 à 40 mm → 0,8 à 80 mm ou plus (trop d'eau d'un coup) |
 
 Quand une composante n'est pas calculable (pas de température, ou pas de prévision au bout de la série), elle est
 ignorée et les poids des autres sont renormalisés.
 
-### 1.3 Combinaison : moyenne géométrique pondérée avec plancher
+### 1.3 Assèchement : bilan d'eau du sol
+
+Une réserve de surface (litière et premiers centimètres, capacité 40 mm) est suivie jour après jour depuis le début
+de la série :
+
+```
+réserve = min(réserve + pluie du jour ; 40 mm) − 0,7 × ET0 du jour        (jamais sous 0)
+```
+
+- **ET0** est l'évapotranspiration de référence calculée par Open-Meteo à partir du soleil, du vent, de
+  l'humidité et de la température. Le coefficient 0,7 tient compte de l'abri du couvert forestier.
+- Conséquence : 35 mm suivis de 10 jours secs laissent un sol encore humide en novembre (ET0 vers 1 mm/j), mais
+  presque sec en septembre (ET0 vers 4 mm/j). L'ancienne mesure (pluie moyenne depuis l'averse) donnait le même
+  résultat dans les deux cas.
+- La réserve démarre à 50 % de sa capacité. Cet état initial est oublié au bout de quelques semaines de série.
+- Si l'ET0 manque, le programme revient à l'ancienne mesure : pluie moyenne par jour depuis la pluie
+  déclenchante, 0,4 à 0 mm/j et 1 à partir de 1 mm/j.
+
+### 1.4 Combinaison : moyenne géométrique pondérée avec plancher
 
 ```
 météo_brute = exp( Σ poids_i × ln(max(composante_i ; 0,05)) / Σ poids_i )
@@ -73,7 +95,7 @@ météo_brute = exp( Σ poids_i × ln(max(composante_i ; 0,05)) / Σ poids_i )
 - **Plancher 0,05** : une seule composante à 0 n'écrase pas tout à 0, ce qui garde un classement utile entre zones
   quand les conditions sont mauvaises partout.
 
-### 1.4 Facteur gel (multiplicatif)
+### 1.5 Facteur gel (multiplicatif)
 
 Sur les 7 derniers jours, on compte les nuits à 0 °C ou moins :
 
@@ -173,8 +195,9 @@ Code : `radar/access.py`, commande `python -m radar access`.
 
 - **Temps de trajet** : depuis le centre de Montpellier, ou depuis le domicile si `RADAR_HOME_LAT/LON` sont définis
   en local. Durée en voiture calculée par OSRM (réseau routier OpenStreetMap) vers des points tous les 2 km, plus la
-  marche depuis la route la plus proche à 4 km/h, puis lissage sur les cellules. **Au-delà de 60 min, la cellule est
-  retirée de la carte** (`availability.max_travel_minutes`). Les bouchons ne sont pas pris en compte.
+  marche depuis la route la plus proche à 4 km/h, puis lissage sur les cellules. **Au-delà de 75 min, la cellule est
+  retirée de la carte** (`availability.max_travel_minutes`, porté de 60 à 75 min le 2026-11-07 pour inclure les
+  Cévennes). Les bouchons ne sont pas pris en compte.
 - **Zones protégées** (couches PatriNat, MNHN/OFB) : le score est multiplié par
   `Π (1 − part de la cellule dans la zone × (1 − facteur))`.
   - Réserves naturelles nationales et régionales, arrêtés de biotope : facteur 0. Une cellule entièrement dedans
@@ -188,20 +211,21 @@ Code : `radar/access.py`, commande `python -m radar access`.
 ## 6. Exemple chiffré
 
 Une cellule en octobre : 60 % châtaigneraie et 40 % chênaie verte, sol 100 % acide, 500 m d'altitude, terrain plat.
-Côté météo : 35 mm tombés il y a 10 jours, plus rien depuis, minimales moyennes à 9 °C, 10 mm prévus, pas de gel.
+Côté météo : 35 mm tombés il y a 10 jours, plus rien depuis, réserve du sol retombée à 30 %, minimales moyennes à
+9 °C, 10 mm prévus, pas de gel.
 
 | Étape | Calcul | Valeur |
 |---|---|---|
 | pluie | 35 mm, sur le plateau 20 – 60 | 1,0 |
 | délai | 10 jours, sur le plateau 8 – 14 | 1,0 |
 | température | 9 °C ≥ 8 | 1,0 |
-| sécheresse | 0 mm/j depuis la pluie | 0,4 |
+| sécheresse | réserve 30 %, à mi-chemin entre 10 % et 50 % | 0,7 |
 | prévision | 10 mm, sur le plateau 5 – 40 | 1,0 |
-| météo | 0,4^0,15 (seule la sécheresse pèse) | 0,872 |
+| météo | 0,7^0,15 (seule la sécheresse pèse) | 0,948 |
 | forêt (cèpes) | 0,6 × 1,0 + 0,4 × 0,8 | 0,92 |
 | habitat | 0,92 × 1,0 (géologie) × 1 (altitude) × 1 (exposition) | 0,92 |
 | saison | octobre, en saison | 1,0 |
-| **score** | 100 × 0,872^0,6 × 0,92 × 1 × 1 | **85 → très bon** |
+| **score** | 100 × 0,948^0,6 × 0,92 × 1 × 1 | **89 → très bon** |
 
 La même cellule pour les lactaires : forêt 0 (pas de pins), donc **score 0**. Pour une pinède d'Alep sur calcaire,
 c'est l'inverse.
@@ -236,8 +260,9 @@ Ces critères **ne prouvent pas que les hypothèses sont justes**.
 
 **Ce qui le prouvera** : le journal de sorties (`Journal.bat`). À chaque sortie, le programme enregistre le score
 que le modèle donne **pour ce jour et cet endroit**, avec la version de la configuration. La météo est
-reconstituée par Open-Meteo : prévisions et analyses récentes jusqu'à 85 jours, réanalyse au-delà. Le facteur
-d'accès n'entre pas dans ce score, qui évalue la pousse et non le trajet.
+reconstituée par Open-Meteo avec le même mélange de modèles que la carte : API de prévision pour les sorties
+récentes (jusqu'à environ 2 jours), prévisions archivées des mêmes modèles au-delà. Le facteur d'accès n'entre pas
+dans ce score, qui évalue la pousse et non le trajet.
 
 > Réserve : pour une sortie passée, la composante « prévision » utilise la pluie **réellement tombée** dans les
 > 3 jours suivants, pas celle qui était prévue ce jour-là. Elle ne pèse que 10 %, mais elle avantage légèrement le
@@ -253,14 +278,46 @@ Il mesure ensuite :
 En dessous de 20 sorties, l'indice reste marqué « non calibré ». Les sorties **bredouilles** sont indispensables :
 sans elles, on ne mesure que les succès.
 
+### Contrôle des pluies
+
+`python -m radar controle-pluie` (`radar/observations.py`) confronte la pluie des modèles aux relevés quotidiens
+des stations Météo-France de l'Hérault et du Gard situées à moins de 70 km. Ces relevés ont environ 2 jours de
+retard ; seuls les relevés validés ou non encore expertisés sont gardés, les douteux sont écartés.
+
+- **Période** : les 90 derniers jours de relevés. Les modèles sont lus dans les prévisions archivées d'Open-Meteo
+  (« historical forecast »), et tous sont comparés exactement sur les mêmes jours.
+- **Mesures** :
+  - le rapport des cumuls modèle / observé ;
+  - la corrélation jour par jour ;
+  - les pluies déclenchantes vues, manquées ou inventées, avec une tolérance de ±1 jour ;
+  - l'**effet sur le score météo** : le même calcul est refait avec la pluie observée à la place de celle du
+    modèle. La température et l'ET0 restent celles du modèle, pour isoler l'effet de la pluie.
+- **Résultat du 2026-11-07** (44 stations, 8 août – 5 novembre 2026) :
+
+| | best match | Météo-France |
+|---|---|---|
+| cumul modèle / observé | 0,66 | 0,98 |
+| pluies déclenchantes vues | 64 % | 81 % |
+| fausses alertes | 9 % | 7 % |
+| écart moyen sur le score météo | 12,0 pts | 6,7 pts |
+| classe météo différente de celle obtenue avec les stations | 23 % | 12 % |
+
+« best match » sous-estimait nettement la pluie, surtout en plaine (cumul à 0,61). D'où le passage au modèle
+Météo-France. Une station est un point et une maille de modèle une surface : il faut regarder les tendances, pas
+une station isolée. Le contrôle se relance quand on veut, par exemple en fin de saison.
+
 ---
 
 ## 9. Limites connues
 
-- **Météo modèle**, pas observée, à 5 km de résolution : les orages cévenols très localisés sont lissés. J-7 à J-1
-  correspondent aux analyses du modèle ; au-delà de J+3, la prévision devient peu fiable.
-- **Pas d'humidité du sol ni d'évaporation** : la « sécheresse » est approchée par la pluie tombée depuis la pluie
-  déclenchante. Le vent et le soleil, qui assèchent vite, ne sont pas vus.
+- **Météo modèle**, pas observée, échantillonnée tous les 5 km : les orages cévenols très localisés sont lissés.
+  J-7 à J-1 correspondent aux analyses du modèle. Au-delà de J+3, la série vient d'un autre modèle, moins fin et
+  sous-estimant la pluie en plaine : ces jours sont les moins fiables.
+- **Bilan d'eau simplifié** : capacité et coefficient sont des hypothèses, sans type de sol ni ruissellement. Une
+  forte pente ou un sol filtrant (sable, éboulis) sèchent plus vite que prévu.
+- **Une nouvelle pluie déclenchante remet le délai à zéro** : le modèle considère qu'une poussée repart de zéro,
+  alors que les champignons déjà sortis continuent. Le score chute pendant quelques jours après une grosse pluie
+  qui en suit une autre.
 - **Délai fixe en jours**, indépendant de la température, alors que la pousse est plus rapide par temps doux.
 - **Pas de borne haute de température** : une canicule ne pénalise pas, seule la sécheresse le fait indirectement.
 - **BD Forêt date de 2018** : les incendies, coupes et dépérissements postérieurs ne sont pas vus. Les essences
@@ -278,6 +335,8 @@ sans elles, on ne mesure que les succès.
 | poids forêt / sol / altitude d'une famille | `config/species.yaml` | `families.<famille>` |
 | mois de saison | `config/species.yaml` | `season_months`, `season` |
 | temps de trajet maximal | `config/config.yaml` | `availability.max_travel_minutes` |
+| modèle météo et complément | `config/config.yaml` | `weather.model`, `weather.fallback_model` |
+| bilan d'eau du sol | `config/config.yaml` | `score.secheresse` |
 | traitement des zones protégées | `config/config.yaml` | `access.protected.layers.*.factor` |
 | bornes des classes | `config/config.yaml` | `score.classes` |
 

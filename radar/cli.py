@@ -19,7 +19,17 @@ def meteo_points(cfg: dict, limit: int = 0) -> dict:
     if limit:
         pts = pts[:limit]
     wcfg = cfg["weather"]
-    data = weather.fetch_all(pts, wcfg)
+    stale = None
+    try:
+        data = weather.fetch_blend(pts, wcfg)
+    except (RuntimeError, OSError) as e:
+        if isinstance(e, weather.QuotaExceeded):
+            raise
+        # panne Open-Meteo ou réseau : on garde la dernière météo connue plutôt que pas de carte du tout
+        data, stale = weather.latest_blend(pts, wcfg)
+        print(f"ATTENTION : Open-Meteo injoignable ({e}).\n"
+              f"Carte calculée avec la météo téléchargée le {stale} (J = {stale}, pas aujourd'hui).",
+              file=sys.stderr)
 
     idx = wcfg["past_days"]
     tl = cfg["timeline"]
@@ -37,16 +47,18 @@ def meteo_points(cfg: dict, limit: int = 0) -> dict:
             continue
         ref_date = d["time"][idx]
         dates = [d["time"][idx + o] for o in offsets]
-        r = score.score_point(d["precip"], d["tmin"], idx, alt, cfg["score"])
+        et0 = d.get("et0")
+        r = score.score_point(d["precip"], d["tmin"], idx, alt, cfg["score"], et0)
         if r["score"] is None:
             skipped_bad += 1
             continue
         # score météo de chaque jour du curseur (les jours > J s'appuient sur la prévision)
-        timeline = [score.score_point(d["precip"], d["tmin"], idx + o, alt, cfg["score"])["score"] for o in offsets]
+        timeline = [score.score_point(d["precip"], d["tmin"], idx + o, alt, cfg["score"], et0)["score"]
+                    for o in offsets]
         out_points.append({"lat": lat, "lon": lon, "altitude": alt or 0, **r, "timeline": timeline})
 
     result = {"date": ref_date, "n_points": len(out_points), "points": out_points, "offsets": offsets,
-              "dates": dates, "skipped_sea": skipped_sea, "skipped_bad": skipped_bad}
+              "dates": dates, "skipped_sea": skipped_sea, "skipped_bad": skipped_bad, "stale": stale}
     out_json = resolve("data/out/v0.json")
     out_json.parent.mkdir(parents=True, exist_ok=True)
     out_json.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
@@ -98,7 +110,9 @@ def cmd_score(args: argparse.Namespace) -> int:
     idx, bounds = rastermap.display_grid(res["t"], res["meta"]["grid"])
     days = [{"offset": o, "date": d} for o, d in zip(result["offsets"], result["dates"])]
     html = rastermap.write(resolve("web/index.html"), layers=layers, idx=idx, bounds=bounds, points=result["points"],
-                           days=days, center=(c["lat"], c["lon"]), classes=cfg["score"]["classes"])
+                           days=days, center=(c["lat"], c["lon"]), classes=cfg["score"]["classes"],
+                           warning=(f"Open-Meteo injoignable : météo du {result['stale']}, pas d'aujourd'hui "
+                                    f"(J = {result['stale']}).") if result.get("stale") else None)
     print(f"\nCarte : {html}")
     return 0 if all(x["ok"] for x in res["criteria"]) else 2
 
@@ -115,6 +129,15 @@ def cmd_check_sources(args: argparse.Namespace) -> int:
     except Exception as e:  # noqa: BLE001 - on veut afficher toute panne de source
         print(f"Open-Meteo KO : {e}")
         return 1
+
+
+def cmd_controle_pluie(args: argparse.Namespace) -> int:
+    from radar import observations
+
+    cfg = load_config(args.config)
+    print(observations.run(cfg, args.models.split(",")))
+    print("\nRapport : data/out/controle_pluie.md")
+    return 0
 
 
 def cmd_compare_models(args: argparse.Namespace) -> int:
@@ -248,6 +271,10 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(func=cmd_fetch)
     p = sub.add_parser("terrain", help="prétraitement terrain -> grille 250 m (data/processed)")
     p.set_defaults(func=cmd_terrain)
+    p = sub.add_parser("controle-pluie", help="comparer la pluie du modèle aux relevés des stations Météo-France")
+    p.add_argument("--models", default="best_match,meteofrance_seamless",
+                   help="modèles Open-Meteo à contrôler (best_match = celui du score)")
+    p.set_defaults(func=cmd_controle_pluie)
     p = sub.add_parser("compare-models", help="comparer des modèles météo sur une zone test")
     p.add_argument("--models", default="best_match,meteofrance_arome_france_hd")
     p.add_argument("--center", default="43.9667,3.8500", help="lat,lon (défaut : Saint-Hippolyte-du-Fort)")

@@ -82,8 +82,30 @@ def test_spearman_cas_limites():
 def test_url_meteo_recente_ou_archive():
     u = J.weather_url(43.6, 3.9, TODAY - timedelta(days=35), TODAY + timedelta(days=3), TODAY)
     assert u.startswith("https://api.open-meteo.com/v1/forecast") and "start_date=2026-09-30" in u
-    u = J.weather_url(43.6, 3.9, date(2025, 9, 1), date(2025, 10, 10), TODAY)
-    assert u.startswith("https://archive-api.open-meteo.com/v1/archive") and "end_date=2025-10-10" in u
+    assert "models=" not in u
+    u = J.weather_url(43.6, 3.9, date(2025, 9, 1), date(2025, 10, 10), TODAY, "meteofrance_seamless")
+    assert u.startswith(J.HISTORICAL_API) and "end_date=2025-10-10" in u and "models=meteofrance_seamless" in u
+    # sortie d'il y a 4 jours : historique de 44 j -> archives, tronquées à la veille de la veille
+    u = J.weather_url(43.6, 3.9, TODAY - timedelta(days=44), TODAY - timedelta(days=1), TODAY)
+    assert u.startswith(J.HISTORICAL_API) and "end_date=2026-11-02" in u
+
+
+def test_instantane_melange_les_modeles_comme_la_carte():
+    calls = []
+    n = 45
+    days = [(date(2026, 9, 20) + timedelta(days=k)).isoformat() for k in range(n)]
+
+    def get(u):
+        calls.append(u)
+        mf = "models=meteofrance_seamless" in u
+        p = [None if (mf and k >= n - 2) else (1.0 if mf else 9.0) for k in range(n)]
+        return {"elevation": 300.0, "daily": {"time": days, "precipitation_sum": p, "temperature_2m_min": [8.0] * n,
+                                              "temperature_2m_mean": [11.0] * n,
+                                              "et0_fao_evapotranspiration": [1.0] * n}}
+    cfg = dict(CFG, weather=dict(CFG["weather"], model="meteofrance_seamless", fallback_model="best_match"))
+    w = J.snapshot_weather(cfg, date(2026, 9, 20), date(2026, 11, 3), TODAY, 43.6, 3.9, get)
+    assert len(calls) == 2
+    assert w["precip"][:3] == [1.0] * 3 and w["precip"][-2:] == [9.0, 9.0] and w["filled_days"] == 2
 
 
 def test_instantane_modele_sur_donnees_simulees():

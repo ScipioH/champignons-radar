@@ -13,6 +13,7 @@ python -m venv .venv
 .venv\Scripts\python -m radar access          # temps de trajet (OSRM) + zones protégées, une fois
 .venv\Scripts\python -m radar score           # météo + habitat -> score final J-7..J+7, carte web/index.html
 .venv\Scripts\python -m radar report [--send] # créneaux + meilleures zones : texte, carte, PDF, email
+.venv\Scripts\python -m radar controle-pluie  # pluie des modèles vs stations Météo-France (90 j) -> data/out
 .venv\Scripts\python -m radar v0              # météo seule (points 5 km) -> web/v0.html
 .venv\Scripts\python -m pytest                # tests (sans réseau)
 ```

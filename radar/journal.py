@@ -66,15 +66,34 @@ def model_version() -> str:
 
 # --------------------------------------------------------------------------- instantané du modèle
 
-def weather_url(lat: float, lon: float, start: date, end: date, today: date) -> str:
-    """API de prévision (passé récent + prévision) si la période est récente, sinon archive (réanalyse)."""
-    recent = (today - start).days <= 85
-    base = "https://api.open-meteo.com/v1/forecast" if recent else "https://archive-api.open-meteo.com/v1/archive"
+HISTORICAL_API = "https://historical-forecast-api.open-meteo.com/v1/forecast"
+
+
+def weather_url(lat: float, lon: float, start: date, end: date, today: date, model: str | None = None) -> str:
+    """API de prévision (passé récent + prévision) si la période est récente, sinon prévisions archivées du MÊME
+    modèle (historical-forecast) : pas de réanalyse, pour rester comparable à ce que la carte affichait."""
+    # l'API de prévision ne garde qu'environ 43 jours d'historique pour meteofrance_seamless (constaté le
+    # 2026-11-07 : valeurs vides au-delà) ; au-delà, prévisions archivées (disponibles jusqu'à la veille)
+    recent = (today - start).days <= 42
+    base = "https://api.open-meteo.com/v1/forecast" if recent else HISTORICAL_API
     if not recent:
         end = min(end, today - timedelta(days=2))
     q = {"latitude": f"{lat:.4f}", "longitude": f"{lon:.4f}", "daily": W.DAILY_VARS, "timezone": "Europe/Paris",
          "start_date": start.isoformat(), "end_date": end.isoformat()}
+    if model and model != "best_match":
+        q["models"] = model
     return base + "?" + urllib.parse.urlencode(q, safe=",")
+
+
+def snapshot_weather(cfg: dict, start: date, end: date, today: date, lat: float, lon: float, get) -> dict:
+    """Série météo parsée, avec le même mélange de modèles que la carte (weather.model + fallback_model)."""
+    wcfg = cfg["weather"]
+    prim = W._parse(get(weather_url(lat, lon, start, end, today, wcfg.get("model"))))
+    fb = W.fallback_cfg(wcfg)
+    if fb is None:
+        return prim
+    sec = W._parse(get(weather_url(lat, lon, start, end, today, fb.get("model") or "best_match")))
+    return W.merge_series(prim, sec)
 
 
 def snapshot(cfg: dict, d: date, lat: float, lon: float, famille: str, today: date | None = None,
@@ -83,13 +102,13 @@ def snapshot(cfg: dict, d: date, lat: float, lon: float, famille: str, today: da
     today = today or date.today()
     if d > today + timedelta(days=7):
         raise ValueError("date trop lointaine")
-    lookback = cfg["score"]["delai"]["lookback_days"] + 2
+    # même historique que la carte au jour J (past_days) : le bilan d'eau du sol démarre au même moment
+    lookback = max(cfg["score"]["delai"]["lookback_days"] + 2, cfg["weather"]["past_days"])
     horizon = cfg["score"]["prevision"]["horizon_days"]
     start, end = d - timedelta(days=lookback), d + timedelta(days=horizon)
-    data = (get or (lambda u: W._http_get_json(u, 3)))(weather_url(lat, lon, start, end, today))
-    w = W._parse(data)
+    w = snapshot_weather(cfg, start, end, today, lat, lon, get or (lambda u: W._http_get_json(u, 3)))
     idx = w["time"].index(d.isoformat())
-    r = S.score_point(w["precip"], w["tmin"], idx, w["elevation"], cfg["score"])
+    r = S.score_point(w["precip"], w["tmin"], idx, w["elevation"], cfg["score"], w.get("et0"))
     if r["score"] is None:
         raise ValueError("météo inexploitable")
     scfg = Hb.load_species()

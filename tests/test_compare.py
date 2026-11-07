@@ -46,7 +46,7 @@ def test_public_masque_les_lignes():
 
 
 def test_build_url_modele_et_cache_separe(tmp_path):
-    w = dict(CFG["weather"])
+    w = dict(CFG["weather"], model=None)
     assert "models=" not in weather.build_url([(43.0, 3.0)], w)
     w["model"] = "meteofrance_arome_france_hd"
     assert "models=meteofrance_arome_france_hd" in weather.build_url([(43.0, 3.0)], w)

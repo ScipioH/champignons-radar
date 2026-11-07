@@ -20,7 +20,7 @@ timeline:                 # curseur temporel de la carte (phase 3, avancé le 20
 availability:             # utilisé par le rapport (phase 3)
   days: [saturday, sunday, holiday, weekday_evening]
   weekday_depart_hour: 17.0
-  max_travel_minutes: 60
+  max_travel_minutes: 75  # 60 -> 75 le 2026-11-07 : les meilleures zones à cèpes (Cévennes) étaient à 61-70 min
   min_forage_minutes: 60  # hypothèse : durée minimale utile de cueillette avec la lumière du jour
 
 access:                   # phase 2c (calcul unique : `python -m radar access`)
@@ -49,7 +49,13 @@ weather:
   batch_size: 50          # points par requête
   pause_seconds: 1.5      # pause entre lots
   max_retries: 4
-  max_points_per_day: 2000   # garde-fou quota (limite gratuite ~10000 appels/jour)
+  # Modèle principal Météo-France (AROME 1,3 km + ARPEGE), choisi le 2026-11-07 d'après `controle-pluie` sur
+  # 44 stations et 90 jours : cumul modèle/observé 0,98 (best_match : 0,66), pluies déclenchantes vues 81 %
+  # (64 %), erreur sur le score météo 6,7 pts (12,0). Il ne prévoit que jusqu'à J+3 : au-delà, et pour tout jour
+  # sans valeur, complément par fallback_model (best_match). Les jours J+4..J+10 restent donc moins fiables.
+  model: meteofrance_seamless
+  fallback_model: best_match
+  max_points_per_day: 4000   # garde-fou quota (deux modèles par point ; limite gratuite ~10000 appels/jour)
   cache_dir: data/cache
 
 score:
@@ -79,9 +85,16 @@ score:
     ideal_tmin: 8.0
     zero_tmin: 3.0
     window_days: 7
-  secheresse:
-    ok_mm_per_day: 1.0    # >= ce débit moyen depuis la pluie : pas de pénalité
+  secheresse:             # le sol est-il resté humide ? (score.soil_ratio)
+    # Bilan d'eau quotidien d'une réserve de surface (litière + premiers cm) : W = min(W + pluie, capacité)
+    # − coef × ET0 (évapotranspiration de référence Open-Meteo, gazon ; coef < 1 sous couvert forestier).
+    bucket_mm: 40         # capacité de la réserve
+    et_coef: 0.7
+    init_ratio: 0.5       # état de départ (oublié après quelques semaines de série)
+    dry_ratio: 0.10       # réserve <= 10 % : composante au minimum
+    wet_ratio: 0.50       # réserve >= 50 % : pas de pénalité
     min_value: 0.4
+    ok_mm_per_day: 1.0    # REPLI sans ET0 : pluie moyenne/jour depuis la pluie déclenchante (ancienne mesure)
   prevision:
     horizon_days: 3
     ok_from_mm: 5
@@ -115,6 +128,26 @@ report:                   # phase 3 : `python -m radar report [--send]`
   hunting_months: [9, 10, 11, 12, 1, 2]   # rappel « chasse » (période générale ; arrêtés départementaux à vérifier)
   # Destinataire et SMTP : UNIQUEMENT .env local / secrets GitHub (REPORT_TO, SMTP_HOST, SMTP_PORT, SMTP_USER,
   # SMTP_PASSWORD, REPORT_FROM). Jamais ici : dépôt public.
+
+observations:             # contrôle de la pluie modèle : `python -m radar controle-pluie`
+  # Données climatologiques de base quotidiennes, Météo-France (data.gouv.fr, dataset 6569b51ae64326786e4e8e1a,
+  # Licence Ouverte 2.0). Fichier « latest » par département, mis à jour avec ~2 jours de retard (vérifié le
+  # 2026-11-07 : 28 stations avec pluie dans l'Hérault, données jusqu'à J-2).
+  # L'URL du fichier change chaque année (latest-2025-2026, puis 2026-2027…) : elle est lue dans le catalogue
+  # data.gouv ; le gabarit ne sert qu'en secours. Seuls les hôtes de allowed_hosts sont téléchargés.
+  catalog_url: https://www.data.gouv.fr/api/1/datasets/6569b51ae64326786e4e8e1a/
+  url_template: https://meteofrance.s3.sbg.io.cloud.ovh.net/data/synchro_ftp/BASE/QUOT/Q_{dep}_latest-2025-2026_RR-T-Vent.csv.gz
+  allowed_hosts: [meteofrance.s3.sbg.io.cloud.ovh.net, object.files.data.gouv.fr]
+  departements: ["34", "30"]
+  dir: data/raw/obs
+  max_age_hours: 20       # au-delà, on retélécharge
+  max_size_mb: 20         # garde-fou (le fichier fait ~0,6 Mo)
+  # prévisions archivées des modèles (testée le 2026-11-07 : 91 jours complets, best_match et meteofrance_seamless)
+  model_api_url: https://historical-forecast-api.open-meteo.com/v1/forecast
+  days: 90                # fenêtre comparée, terminée au dernier jour de relevés
+  radius_km: 70           # stations retenues autour du centre
+  min_days: 30            # une station avec moins de jours communs est ignorée
+  event_tolerance_days: 1 # une pluie déclenchante est « vue » si le modèle la place à ±1 jour
 
 calibration:
   min_sorties: 20         # sous ce seuil : affichage "indice non calibré"

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -17,7 +18,10 @@ from pathlib import Path
 from radar.config import resolve
 
 log = logging.getLogger("radar.weather")
-DAILY_VARS = "precipitation_sum,temperature_2m_min,temperature_2m_mean"
+# et0_fao_evapotranspiration : évapotranspiration de référence (mm/j), pour le bilan d'eau du sol (score.soil_ratio)
+DAILY_VARS = "precipitation_sum,temperature_2m_min,temperature_2m_mean,et0_fao_evapotranspiration"
+# change quand DAILY_VARS change : un cache ancien n'a pas les mêmes variables
+VARS_TAG = "v2"
 
 
 class QuotaExceeded(RuntimeError):
@@ -60,10 +64,12 @@ def build_url(points: list[tuple[float, float]], wcfg: dict) -> str:
         "latitude": ",".join(f"{p[0]:.4f}" for p in points),
         "longitude": ",".join(f"{p[1]:.4f}" for p in points),
         "daily": DAILY_VARS,
-        "past_days": wcfg["past_days"],
-        "forecast_days": wcfg["forecast_days"],
         "timezone": "Europe/Paris",
     }
+    if wcfg.get("start_date"):  # période datée (API historical-forecast, contrôle des pluies)
+        params["start_date"], params["end_date"] = wcfg["start_date"], wcfg["end_date"]
+    else:
+        params["past_days"], params["forecast_days"] = wcfg["past_days"], wcfg["forecast_days"]
     if wcfg.get("model"):
         params["models"] = wcfg["model"]  # ex. meteofrance_arome_france_hd ; absent = best_match
     return wcfg["api_url"] + "?" + urllib.parse.urlencode(params, safe=",")
@@ -77,6 +83,7 @@ def _parse(entry: dict) -> dict:
         "precip": d["precipitation_sum"],
         "tmin": d["temperature_2m_min"],
         "tmean": d["temperature_2m_mean"],
+        "et0": d.get("et0_fao_evapotranspiration"),  # absent des anciens caches : repli dans le score
     }
 
 
@@ -94,15 +101,93 @@ def _load_quota(cache_dir: Path) -> dict:
     return {"date": today, "points": 0}
 
 
-def fetch_all(points: list[tuple[float, float]], wcfg: dict) -> dict[str, dict]:
-    """Retourne {"lat,lon": {elevation,time,precip,tmin,tmean}} ; cache valable pour la journée."""
-    cache_dir = resolve(wcfg["cache_dir"])
-    cache_dir.mkdir(parents=True, exist_ok=True)
+def _cache_prefix(wcfg: dict) -> str:
     tag = f"{wcfg['model']}_" if wcfg.get("model") else ""
     # la fenêtre demandée fait partie de la clé : sinon un changement de past_days relirait des séries
     # de mauvaise longueur et décalerait tous les indices
-    span = f"p{wcfg['past_days']}f{wcfg['forecast_days']}_"
-    cache_file = cache_dir / f"weather_{tag}{span}{date.today().isoformat()}.json"
+    if wcfg.get("start_date"):
+        span = f"s{wcfg['start_date']}e{wcfg['end_date']}_"
+    else:
+        span = f"p{wcfg['past_days']}f{wcfg['forecast_days']}_"
+    return f"weather_{tag}{span}"
+
+
+def latest_cache(points: list[tuple[float, float]], wcfg: dict) -> tuple[dict[str, dict], str]:
+    """Repli quand Open-Meteo est injoignable : le cache le plus récent (même modèle, même fenêtre) qui contient
+    tous les points. Retourne (données, date du cache). Ses séries sont centrées sur SA date, pas sur aujourd'hui."""
+    cache_dir = resolve(wcfg["cache_dir"])
+    prefix = _cache_prefix(wcfg)
+    found = []
+    for f in cache_dir.glob(prefix + "*.json"):
+        m = re.fullmatch(r"(?:v\d+_)?(\d{4}-\d{2}-\d{2})", f.stem[len(prefix):])
+        if m:
+            found.append((m.group(1), f))
+    for day, f in sorted(found, reverse=True):
+        cache = json.loads(f.read_text(encoding="utf-8"))
+        if all(_key(*p) in cache for p in points):
+            return {_key(*p): cache[_key(*p)] for p in points}, day
+    raise RuntimeError("Open-Meteo injoignable et aucune météo en cache pour ces points")
+
+
+SERIES = ("precip", "tmin", "tmean", "et0")
+
+
+def fallback_cfg(wcfg: dict) -> dict | None:
+    """Config du modèle de complément (fallback_model), ou None s'il n'y a pas de mélange."""
+    fb = wcfg.get("fallback_model")
+    if not wcfg.get("model") or not fb:
+        return None
+    return dict(wcfg, model=None if fb == "best_match" else fb)
+
+
+def merge_series(primary: dict, fallback: dict) -> dict:
+    """Jour par jour : valeur du modèle principal, sinon celle du complément (ex. AROME/ARPEGE jusqu'à J+3,
+    puis best_match). Les deux séries doivent couvrir les mêmes dates."""
+    if primary["time"] != fallback["time"]:
+        raise RuntimeError("séries météo de dates différentes : mélange impossible")
+    out = dict(primary)
+    out["elevation"] = primary.get("elevation") if primary.get("elevation") is not None else fallback.get("elevation")
+    for k in SERIES:
+        p, f = primary.get(k), fallback.get(k)
+        if p is None or f is None:
+            out[k] = p if p is not None else f
+            continue
+        out[k] = [a if a is not None else b for a, b in zip(p, f)]
+    out["filled_days"] = sum(a is None for a in primary["precip"])
+    return out
+
+
+def fetch_blend(points: list[tuple[float, float]], wcfg: dict) -> dict[str, dict]:
+    """fetch_all du modèle principal, complété par fallback_model là où il n'a pas de valeur."""
+    fb = fallback_cfg(wcfg)
+    prim = fetch_all(points, wcfg)
+    if fb is None:
+        return prim
+    sec = fetch_all(points, fb)
+    return {k: merge_series(prim[k], sec[k]) for k in prim}
+
+
+def latest_blend(points: list[tuple[float, float]], wcfg: dict) -> tuple[dict[str, dict], str]:
+    """Repli hors ligne pour fetch_blend : dernier cache du modèle principal, complété par le cache du complément
+    du même jour s'il existe."""
+    prim, day = latest_cache(points, wcfg)
+    fb = fallback_cfg(wcfg)
+    if fb is None:
+        return prim, day
+    try:
+        sec, day2 = latest_cache(points, fb)
+    except RuntimeError:
+        return prim, day
+    if day2 != day:
+        return prim, day
+    return {k: merge_series(prim[k], sec[k]) for k in prim}, day
+
+
+def fetch_all(points: list[tuple[float, float]], wcfg: dict) -> dict[str, dict]:
+    """Retourne {"lat,lon": {elevation,time,precip,tmin,tmean,et0}} ; cache valable pour la journée."""
+    cache_dir = resolve(wcfg["cache_dir"])
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / f"{_cache_prefix(wcfg)}{VARS_TAG}_{date.today().isoformat()}.json"
     cache: dict[str, dict] = json.loads(cache_file.read_text(encoding="utf-8")) if cache_file.exists() else {}
 
     todo = [p for p in points if _key(*p) not in cache]

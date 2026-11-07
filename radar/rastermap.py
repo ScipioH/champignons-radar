@@ -88,7 +88,7 @@ TEMPLATE = """<!doctype html>
  #daynote{font-size:11px;color:#555;min-height:14px}
  #daynote.warn{color:#b35900}
 </style></head><body>
-<div id="banner"><b>Indice de POUSSE, pas de comestibilité.</b> <b>Indice non calibré</b> (poids d'habitat et seuils
+<div id="banner">__WARN__<b>Indice de POUSSE, pas de comestibilité.</b> <b>Indice non calibré</b> (poids d'habitat et seuils
 = hypothèses). Respecter la vigilance Météo-France, la chasse, les propriétés privées et la réglementation locale.
 Calcul du __DATE__ ; météo en maille 5 km, lissée (pas plus précise à 250 m). Habitat 2018 (BD Forêt).<br>
 <small>Météo : <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0) · Forêt : IGN BD Forêt V2 ·
@@ -244,7 +244,7 @@ async function refresh() {
 
 
 def build_html(layers: dict, idx: np.ndarray, bounds, points: list[dict], days: list[dict],
-               center: tuple[float, float], classes: dict) -> str:
+               center: tuple[float, float], classes: dict, warning: str | None = None) -> str:
     """layers : nom -> {label, kind ('final'|'habitat'), values : liste de tableaux 0-1 (NaN = inconnu)}.
 
     Les couches 'final' ont une valeur par jour de `days` ({offset, date}) ; l'habitat, une seule.
@@ -260,7 +260,11 @@ def build_html(layers: dict, idx: np.ndarray, bounds, points: list[dict], days: 
                        "data": [pack(encode_values(v, l.get("scale", 1.0)), idx) for v in l["values"]]}
                    for n, l in layers.items()},
     }
-    html = TEMPLATE
+    warn = ""
+    if warning:
+        w = warning.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        warn = f'<div style="color:#b00020;font-weight:700;margin-bottom:4px">⚠ {w}</div>'
+    html = TEMPLATE.replace("__WARN__", warn)
     for k, v in {"__TILES__": TILES_JS, "__DATA__": _safe_json(data),
                  "__COLORS__": json.dumps(COLORS, ensure_ascii=False),
                  "__LAT__": str(center[0]), "__LON__": str(center[1]), "__DATE__": str(today)}.items():
