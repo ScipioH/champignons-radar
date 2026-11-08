@@ -81,6 +81,12 @@ score:
     plateau_to: 14
     zero_after: 35
     lookback_days: 30
+    # Enchaînement des pluies (2026-11-08) : montée comptée depuis le début de la poussée, déclin depuis la
+    # dernière pluie qui l'entretient.
+    reset_mm: 50          # cumul 2 j >= : forte pluie, NOUVELLE poussée ; en dessous, une pluie pendant une
+                          # poussée active (<= plateau_to j après sa dernière pluie) la PROLONGE
+    damaged_factor: 0.5   # après une forte pluie, la poussée précédente (gorgée d'eau, limaces) garde la moitié
+                          # de son score météo tant que c'est mieux que la nouvelle
   temp:
     ideal_tmin: 8.0
     zero_tmin: 3.0

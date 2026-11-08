@@ -48,8 +48,22 @@ valeur, la série est complétée jour par jour par le modèle « best match » 
 ### 1.1 La pluie déclenchante
 
 L'idée de départ : une poussée suit une **bonne pluie** (≥ 20 mm cumulés sur 2 jours consécutifs), après un délai
-d'environ une à deux semaines. Le programme cherche la pluie déclenchante **la plus récente** dans les 30 derniers
-jours ; le jour retenu est celui des deux qui a reçu le plus d'eau.
+d'environ une à deux semaines. Le programme repère les pluies déclenchantes des 30 derniers jours. Des jours de
+pluie consécutifs forment un seul épisode, daté de son jour le plus arrosé.
+
+**Enchaînement des pluies** (règles du 2026-11-08) :
+
+- **Pluie modérée** (moins de 50 mm sur 2 jours) pendant une poussée encore active, c'est-à-dire au plus 14 jours
+  après sa dernière pluie : la poussée est **prolongée**. La montée du délai reste comptée depuis le début de la
+  poussée ; le déclin est compté depuis cette dernière pluie.
+- **Forte pluie** (50 mm ou plus sur 2 jours) : une **nouvelle poussée** démarre. L'ancienne est considérée comme
+  **abîmée** (champignons gorgés d'eau, limaces) et garde la moitié de son score météo, tant que c'est mieux que la
+  nouvelle.
+- Pluie modérée après une poussée éteinte : nouvelle poussée.
+
+Constat sur les données de novembre 2026 : la moitié du score d'une poussée mûre (environ 80 / 2 = 40) est proche
+de ce que donne déjà le plancher des composantes avec un délai nul (environ 42). La règle « poussée abîmée » rend
+donc ce comportement explicite et réglable, sans changer beaucoup les chiffres à 0,5.
 
 ### 1.2 Cinq composantes, chacune entre 0 et 1
 
@@ -58,7 +72,7 @@ Toutes sont des rampes linéaires entre des seuils (plateau = 1).
 | Composante | Poids | Ce qui est mesuré | Courbe |
 |---|---|---|---|
 | **pluie** | 0,30 | meilleur cumul sur 2 jours dans les 15 derniers jours | 0 sous 10 mm → 1 à 20 mm → plateau jusqu'à 60 mm → redescend à 0,5 à 150 mm (sols lessivés, ravinés) |
-| **délai** | 0,25 | jours écoulés depuis la pluie déclenchante | 0 jusqu'à 4 j → 1 à 8 j → plateau jusqu'à 14 j → 0 à 35 j ; 0 s'il n'y a pas eu de pluie déclenchante |
+| **délai** | 0,25 | âge de la poussée en cours (§1.1) | montée depuis son début : 0 jusqu'à 4 j → 1 à 8 j ; déclin depuis sa dernière pluie : plateau jusqu'à 14 j → 0 à 35 j ; 0 sans pluie déclenchante |
 | **température** | 0,20 | moyenne des minimales des 7 derniers jours | 0 à 3 °C ou moins → 1 à 8 °C ou plus |
 | **sécheresse** | 0,15 | réserve d'eau du sol au jour J, par bilan pluie − évaporation (§1.3) | 0,4 si la réserve est à 10 % ou moins → 1 à partir de 50 % |
 | **prévision** | 0,10 | cumul de pluie prévu sur les 3 jours suivants | 0,85 à sec → 1 de 5 à 40 mm → 0,8 à 80 mm ou plus (trop d'eau d'un coup) |
@@ -315,9 +329,9 @@ une station isolée. Le contrôle se relance quand on veut, par exemple en fin d
   sous-estimant la pluie en plaine : ces jours sont les moins fiables.
 - **Bilan d'eau simplifié** : capacité et coefficient sont des hypothèses, sans type de sol ni ruissellement. Une
   forte pente ou un sol filtrant (sable, éboulis) sèchent plus vite que prévu.
-- **Une nouvelle pluie déclenchante remet le délai à zéro** : le modèle considère qu'une poussée repart de zéro,
-  alors que les champignons déjà sortis continuent. Le score chute pendant quelques jours après une grosse pluie
-  qui en suit une autre.
+- **Enchaînement des pluies schématique** : le seuil de 50 mm et le facteur 0,5 sont des hypothèses de cueilleur.
+  L'intensité horaire, la grêle ou le froid qui suit ne sont pas pris en compte. Les sorties juste après une grosse
+  pluie, avec une note sur l'état des champignons, sont les plus utiles pour les régler.
 - **Délai fixe en jours**, indépendant de la température, alors que la pousse est plus rapide par temps doux.
 - **Pas de borne haute de température** : une canicule ne pénalise pas, seule la sécheresse le fait indirectement.
 - **BD Forêt date de 2018** : les incendies, coupes et dépérissements postérieurs ne sont pas vus. Les essences
@@ -337,6 +351,7 @@ une station isolée. Le contrôle se relance quand on veut, par exemple en fin d
 | temps de trajet maximal | `config/config.yaml` | `availability.max_travel_minutes` |
 | modèle météo et complément | `config/config.yaml` | `weather.model`, `weather.fallback_model` |
 | bilan d'eau du sol | `config/config.yaml` | `score.secheresse` |
+| forte pluie qui relance, poussée abîmée | `config/config.yaml` | `score.delai.reset_mm`, `score.delai.damaged_factor` |
 | traitement des zones protégées | `config/config.yaml` | `access.protected.layers.*.factor` |
 | bornes des classes | `config/config.yaml` | `score.classes` |
 

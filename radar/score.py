@@ -46,7 +46,67 @@ def comp_pluie(precip: list, idx: int, cfg: dict) -> float:
     return ramp(best, c["zero_below_mm"], c["plateau_from_mm"])
 
 
+def rain_events(precip: list, idx: int, cfg: dict) -> list[tuple[int, float]]:
+    """Pluies déclenchantes (cumul 2 j >= trigger_mm) des lookback_days derniers jours, regroupées en épisodes :
+    (jour le plus arrosé de l'épisode, meilleur cumul sur 2 jours de l'épisode), dans l'ordre chronologique."""
+    trig = cfg["pluie"]["trigger_mm"]
+    lo = max(0, idx - cfg["delai"]["lookback_days"])
+    out: list[tuple[int, float]] = []
+    last_i = None
+    for i in range(lo, idx + 1):
+        prev = _p(precip, i - 1) if i >= 1 else 0.0
+        two = _p(precip, i) + prev
+        if two < trig:
+            continue
+        day = i if _p(precip, i) >= prev else i - 1
+        if out and last_i is not None and i - last_i <= 1:   # même épisode
+            d0, a0 = out[-1]
+            best_day = day if _p(precip, day) > _p(precip, d0) else d0
+            out[-1] = (best_day, max(a0, two))
+        else:
+            out.append((day, two))
+        last_i = i
+    return out
+
+
+def flushes(events: list[tuple[int, float]], cfg: dict) -> tuple[dict | None, dict | None]:
+    """Poussée en cours et poussée précédente abîmée, à partir des épisodes de pluie.
+
+    - Première pluie déclenchante : une poussée démarre (anchor = début, last = dernière pluie qui l'entretient).
+    - Pluie modérée (< reset_mm) pendant une poussée encore active (<= plateau_to jours après sa dernière pluie) :
+      la poussée est PROLONGÉE (last avancé), pas relancée.
+    - Pluie forte (>= reset_mm) : nouvelle poussée ; l'ancienne devient « abîmée » (champignons gorgés d'eau,
+      limaces) et garde damaged_factor de son score tant qu'elle dépasse la nouvelle.
+    - Pluie modérée après une poussée éteinte : nouvelle poussée, sans poussée abîmée.
+    """
+    c = cfg["delai"]
+    cur: dict | None = None
+    prev: dict | None = None
+    for day, amount in events:
+        if cur is None:
+            cur = {"anchor": day, "last": day}
+        elif amount >= c["reset_mm"]:
+            prev, cur = cur, {"anchor": day, "last": day}
+        elif day - cur["last"] <= c["plateau_to"]:
+            cur = {"anchor": cur["anchor"], "last": day}
+        else:
+            prev, cur = None, {"anchor": day, "last": day}
+    return cur, prev
+
+
+def delai_flush(f: dict | None, idx: int, cfg: dict) -> float:
+    """Montée comptée depuis le début de la poussée, déclin compté depuis la dernière pluie qui l'entretient."""
+    if f is None:
+        return 0.0
+    c = cfg["delai"]
+    up = ramp(idx - f["anchor"], c["zero_before"], c["plateau_from"])
+    d_last = idx - f["last"]
+    down = 1.0 if d_last <= c["plateau_to"] else ramp(d_last, c["plateau_to"], c["zero_after"], 1.0, 0.0)
+    return min(up, down)
+
+
 def comp_delai(days_since: int | None, cfg: dict) -> float:
+    """Ancienne forme (une seule pluie déclenchante) ; conservée pour référence et tests."""
     if days_since is None:
         return 0.0
     c = cfg["delai"]
@@ -150,25 +210,35 @@ def score_point(precip: list, tmin: list, idx: int, altitude: float | None, cfg:
         raise ValueError("idx hors série")
     trig_idx = find_trigger(precip, idx, cfg)
     days_since = None if trig_idx is None else idx - trig_idx
+    cur, prev = flushes(rain_events(precip, idx, cfg), cfg)
     comps = {
         "pluie": comp_pluie(precip, idx, cfg),
-        "delai": comp_delai(days_since, cfg),
+        "delai": delai_flush(cur, idx, cfg),
         "temp": comp_temp(tmin, idx, cfg),
         "secheresse": comp_secheresse(precip, idx, trig_idx, cfg, et0),
         "prevision": comp_prevision(precip, idx, cfg),
     }
     floor = cfg["floor"]
-    wsum = 0.0
-    acc = 0.0
-    for name, w in cfg["weights"].items():
-        v = comps.get(name)
-        if v is None:
-            continue
-        wsum += w
-        acc += w * math.log(max(v, floor))
-    if wsum == 0:
+
+    def combine(cs: dict) -> float | None:
+        wsum = acc = 0.0
+        for name, w in cfg["weights"].items():
+            v = cs.get(name)
+            if v is None:
+                continue
+            wsum += w
+            acc += w * math.log(max(v, floor))
+        return math.exp(acc / wsum) if wsum else None
+
+    meteo = combine(comps)
+    if meteo is None:
         return {"score": None, "classe": "indéterminé", "partial": True, "components": comps}
-    meteo = math.exp(acc / wsum)
+    # poussée précédente abîmée par une forte pluie : elle garde une fraction de son score si c'est mieux
+    damaged = False
+    if prev is not None:
+        old = combine(dict(comps, delai=delai_flush(prev, idx, cfg)))
+        if old is not None and cfg["delai"]["damaged_factor"] * old > meteo:
+            meteo, damaged = cfg["delai"]["damaged_factor"] * old, True
     gf, nights = gel_factor(tmin, idx, altitude, cfg)
     score = round(100 * meteo * gf, 1)
     return {
@@ -179,6 +249,8 @@ def score_point(precip: list, tmin: list, idx: int, altitude: float | None, cfg:
         "gel_factor": round(gf, 3),
         "gel_nights": nights,
         "days_since_trigger": days_since,
+        "days_since_flush_start": None if cur is None else idx - cur["anchor"],
+        "damaged_flush": damaged,
         "rain_15d_mm": round(sum(_p(precip, i) for i in range(max(0, idx - 14), idx + 1)), 1),
         "soil_ratio": None if (sr := soil_ratio(precip, et0, idx, cfg)) is None else round(sr, 3),
     }

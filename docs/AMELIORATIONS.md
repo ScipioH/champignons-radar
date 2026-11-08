@@ -16,6 +16,9 @@ sont classées par intérêt, avec un effort indicatif.
   0,98 de l'observé, les pluies déclenchantes vues de 64 % à 81 %, et l'erreur sur le score de 12 à 6,7 points.
   Au-delà de J+3, la série est complétée par best match.
 - **C1, trajet** : 75 min au lieu de 60.
+- **A8, enchaînement des pluies** (2026-11-08) : une pluie modérée (moins de 50 mm sur 2 jours) pendant une
+  poussée la prolonge au lieu de la relancer. Une forte pluie relance une poussée, et l'ancienne, « abîmée », garde
+  la moitié de son score. Voir METHODE.md, §1.1.
 - **Robustesse** : si Open-Meteo est injoignable, la carte est calculée avec la dernière météo téléchargée, et un
   avertissement rouge l'indique en haut de la carte.
 
@@ -25,7 +28,6 @@ sont classées par intérêt, avec un effort indicatif.
 
 | # | Piste | Pourquoi | Effort |
 |---|---|---|---|
-| A8 | **Ne plus remettre la poussée à zéro** quand une nouvelle pluie déclenchante tombe pendant une poussée (garder le meilleur des deux épisodes) | Aujourd'hui, une grosse pluie qui en suit une autre fait chuter le score pendant quelques jours, alors que les champignons déjà sortis continuent (constaté le 4 novembre 2026 : de 79 à 42). | faible |
 | A2 | **Délai en degrés-jours** plutôt qu'en jours | Par temps doux, la pousse démarre plus tôt. Un délai fixe de 8 à 14 jours est faux en septembre comme en décembre. | faible |
 | A3 | **Pénalité de chaleur** (minimales très élevées combinées à la sécheresse) | Aucune borne haute de température n'existe pour l'instant. Utile surtout pour les girolles en été. | faible |
 | A9 | **Corriger best match en plaine pour J+4..J+10** (facteur mesuré par `controle-pluie`) ou n'afficher ces jours qu'à titre indicatif | Ce modèle sous-estime la pluie d'environ 40 % en plaine. | faible |
@@ -65,7 +67,7 @@ sont classées par intérêt, avec un effort indicatif.
 ## Ordre conseillé
 
 1. Des sorties notées, y compris bredouilles : c'est la seule façon de savoir si le reste vaut l'effort.
-2. **A8 + A2** : deux corrections simples de la logique de délai.
+2. **A2** (délai en degrés-jours) : la dernière simplification forte de la logique de délai.
 3. **B2**, tôt, pour que l'évaluation future soit propre.
 4. **C2** si les emails deviennent du bruit.
 5. **B1** une fois 20 à 30 sorties réunies.

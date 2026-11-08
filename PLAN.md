@@ -175,6 +175,7 @@ Plan de validation : pour chaque station de la zone avec RR/TN renseignés, comp
   - trajet maximal 75 min (au lieu de 60) ;
   - repli hors ligne : si Open-Meteo est injoignable, dernière météo en cache + avertissement sur la carte (constaté : le lancement local échouait sur une panne passagère ; la CI, elle, passait).
   - Constat : une nouvelle pluie déclenchante remet le délai à zéro (chute du score les 4-8/11 malgré la poussée en cours) → piste A8.
+- [x] A8, enchaînement des pluies (2026-11-08, validé par l'utilisateur) : pluie < 50 mm/2 j pendant une poussée active → prolongation (montée depuis le début, déclin depuis la dernière pluie) ; pluie ≥ 50 mm → nouvelle poussée, l'ancienne « abîmée » garde 0,5 × son score météo si c'est mieux. Constat : à 0,5, effet proche du plancher existant (≈ 40 vs 42 les 4-8/11) ; la prolongation, elle, ajoute des zones « bon » les 9-11/11.
 - [ ] **Calibration** (≥ 20 sorties, bredouilles comprises) ← **prochaine étape : en attente des sorties**
 - [ ] Mise en service de l'envoi quotidien : créer les secrets GitHub (cf. `.env.example`).
 
