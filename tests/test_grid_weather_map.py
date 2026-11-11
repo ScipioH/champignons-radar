@@ -91,6 +91,23 @@ def test_retente_sur_coupure_reseau_et_5xx(monkeypatch):
         weather._http_get_json("https://x", 2)
 
 
+def test_certificat_refuse_echoue_tout_de_suite(monkeypatch):
+    import ssl
+    import urllib.error
+    calls = []
+    err = ssl.SSLCertVerificationError(1, "certificate verify failed")
+    err.verify_message = "certificate has expired"
+
+    def refuse(req, timeout):
+        calls.append(1)
+        raise urllib.error.URLError(err)
+    monkeypatch.setattr(weather.urllib.request, "urlopen", refuse)
+    monkeypatch.setattr(weather.time, "sleep", lambda s: pytest.fail("pas d'attente sur un certificat refusé"))
+    with pytest.raises(RuntimeError, match="certificate has expired.*antivirus"):
+        weather._http_get_json("https://x", 4)
+    assert len(calls) == 1
+
+
 def test_reponse_incoherente(monkeypatch, wcfg):
     monkeypatch.setattr(weather, "_http_get_json", lambda u, r: [fake_entry(0)])
     with pytest.raises(RuntimeError):

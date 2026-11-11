@@ -15,6 +15,12 @@ sont dans `config/sources.yaml` ; les SHA-256 réels des fichiers téléchargés
 
 ## Réserves à connaître
 
+- **Antivirus qui analyse le HTTPS** (constaté le 2026-11-11 sur le PC local) : les certificats sont ré-signés par
+  « Avast Web/Mail Shield » et, par moments, présentés comme expirés. Python refuse alors la connexion. Le programme
+  échoue tout de suite avec un message explicite et la carte utilise la dernière météo en cache. Solution : exclure
+  `*.open-meteo.com` (et `data.gouv.fr`, `meteofrance.s3.sbg.io.cloud.ovh.net`) de l'analyse HTTPS de l'antivirus.
+  Ne jamais désactiver la vérification des certificats dans le code. La CI GitHub n'est pas concernée.
+
 - **Historique de l'API de prévision Open-Meteo** : au-delà d'environ 43 jours (`meteofrance_seamless`) ou 57 jours
   (`best_match`), elle renvoie des valeurs vides sans erreur (constaté le 2026-11-07 avec `past_days=90`). La carte
   utilise 40 jours, sans trou ; le contrôle des pluies et les sorties anciennes du journal passent par les

@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import ssl
 import time
 import urllib.error
 import urllib.parse
@@ -48,7 +49,21 @@ def _http_get_json(url: str, max_retries: int) -> object:
                 continue
             body = e.read().decode("utf-8", "replace")[:300]
             raise RuntimeError(f"Open-Meteo HTTP {e.code}: {body}") from e
-        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+        except urllib.error.URLError as e:
+            if isinstance(e.reason, ssl.SSLCertVerificationError):
+                # réessayer n'y change rien. Cause constatée le 2026-11-11 : antivirus qui intercepte le HTTPS
+                # (certificats ré-signés « Avast Web/Mail Shield ») et présente par moments un certificat expiré
+                raise RuntimeError(
+                    f"certificat HTTPS refusé ({e.reason.verify_message}). Cause probable : un antivirus qui "
+                    "analyse les connexions HTTPS (ex. Avast, Agent Web) ; exclure *.open-meteo.com de cette "
+                    "analyse, ou vérifier l'heure du PC.") from e
+            if attempt < max_retries:
+                log.warning("réseau : %s ; nouvelle tentative dans %.0fs", e, delay)
+                time.sleep(delay)
+                delay *= 2
+                continue
+            raise RuntimeError(f"Open-Meteo injoignable après {max_retries + 1} essais : {e}") from e
+        except (TimeoutError, ConnectionError) as e:
             # coupure réseau / délai dépassé (constaté en CI : « handshake operation timed out »)
             if attempt < max_retries:
                 log.warning("réseau : %s ; nouvelle tentative dans %.0fs", e, delay)
