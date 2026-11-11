@@ -7,7 +7,8 @@ valeurs citées viennent de `config/config.yaml` (météo, accès) et `config/sp
 > **Ce que l'indicateur mesure** : une probabilité relative que des champignons *poussent* à un endroit et à une
 > date, d'après la météo récente, le terrain et la saison.
 > **Ce qu'il ne mesure pas** : la comestibilité (jamais), la présence réelle (personne n'a compté), la pression
-> de cueillette, l'autorisation d'accès d'une parcelle privée.
+> de cueillette, l'autorisation d'accès d'une parcelle. Le terrain privé et les pentes fortes abaissent le score
+> (§5), parce qu'on y cueille moins, pas parce qu'il y pousse moins.
 
 ---
 
@@ -25,7 +26,7 @@ score = 100 × météo^0,6 × habitat^1,0 × saison × accès
 | météo | 0 – 1 | points tous les 5 km, lissés sur les cellules | le jour |
 | habitat | 0 – 1 | cellule 250 m | la famille (et le mois, via l'exposition) |
 | saison | 1 / 0,5 / 0,1 | — | la famille et le mois |
-| accès | 0 – 1, ou « hors périmètre » | cellule 250 m | fixe (calcul unique) |
+| accès | 0 – 1, ou « hors périmètre » | cellule 250 m | fixe (calcul unique) : trajet, zones protégées, pente, foncier |
 
 C'est un **produit** : un facteur faible suffit à faire baisser le score (une forêt idéale après une sécheresse
 reste faible ; une pluie parfaite sur une garrigue pelée aussi). L'exposant 0,6 sur la météo atténue sa sévérité,
@@ -219,6 +220,33 @@ Code : `radar/access.py`, commande `python -m radar access`.
   - Cœur du Parc national des Cévennes : facteur 1, donc aucun effet sur le score. La zone est **signalée** comme
     « cueillette réglementée ».
   - Dans tous les cas, c'est le règlement de chaque site qui fait foi.
+- **Accès à pied** (`radar/foot.py`, `python -m radar pied`, ajouté le 2026-11-11) : la pente est calculée à 50 m
+  depuis le relief Copernicus, et les voies viennent de la BD TOPO de l'IGN (routes, chemins, sentiers, hors
+  autoroutes). Chaque pixel de 50 m reçoit une **difficulté** entre 0 et 1 :
+  - 0 jusqu'à 15° de pente, puis une hausse linéaire jusqu'à 1 à 30° ;
+  - divisée par 2 au bord immédiat d'une voie (≤ 50 m), où l'on prospecte une bande le long du chemin ;
+  - 1 à plus de 1 km de toute voie, même sur terrain doux.
+
+  Le score est multiplié par `1 − 0,5 × difficulté moyenne de la cellule`, donc au pire divisé par 2, jamais
+  exclu. Une première règle, qui ne pénalisait que les pentes à plus de 100 m d'un chemin, n'avait presque aucun
+  effet : le réseau IGN est si dense que presque tout est à moins de 100 m d'une voie. Dans une vallée cévenole
+  aux versants raides, le facteur moyen vaut environ 0,85.
+- **Foncier** (`radar/land.py`, `python -m radar foncier`, ajouté le 2026-11-11) : le but est de retirer les endroits
+  où l'on ne pourra pas cueillir. Chaque pixel de 10 m est classé :
+  - **abords bâtis** : à moins de 30 m d'un bâtiment du cadastre (maison et jardin, hameau, village). Facteur 0,
+    quel que soit le propriétaire ;
+  - **public** : parcelle appartenant à l'État, une région, un département, une commune ou un établissement public
+    (fichier DGFiP des personnes morales, groupes 1, 2, 3, 4, 9 ou forme juridique de droit public). Facteur 1 ;
+  - **non cadastré** (routes, cours d'eau : domaine public). Facteur 1 ;
+  - **privé** : toute autre parcelle. Les parcelles des particuliers ne sont pas publiées : être absent du fichier
+    DGFiP veut dire privé, particulier ou société. Facteur `land.private_factor` (0,3, hypothèse).
+
+  Le facteur de la cellule est la moyenne de ces facteurs pondérée par les surfaces. Sur la carte, un bouton fait
+  passer le poids du privé de 0,3 à 0,7 (`land.map_private_factors`) : la page reçoit le score sans foncier et
+  applique le poids choisi. L'email utilise `land.private_factor`. Les meilleurs habitats à cèpes et à girolles
+  sont à environ 90 % privés (lactaires : 57 %) ; avec 0,3, il ne reste donc que peu de zones « bon » pour eux. Il s'ajoute à ceux du trajet,
+  des zones protégées et de l'accès à pied. Une parcelle publique n'autorise pas tout : des arrêtés communaux ou
+  préfectoraux peuvent limiter la cueillette.
 
 ---
 
@@ -336,6 +364,11 @@ une station isolée. Le contrôle se relance quand on veut, par exemple en fin d
 - **Pas de borne haute de température** : une canicule ne pénalise pas, seule la sécheresse le fait indirectement.
 - **BD Forêt date de 2018** : les incendies, coupes et dépérissements postérieurs ne sont pas vus. Les essences
   précises ne sont renseignées que sur une minorité de polygones, d'où les priors.
+- **Pente lissée** : à 50 m, et sur un modèle de surface (la canopée gonfle le relief), une barre rocheuse ou un
+  ravin étroit n'apparaissent pas. Les voies de la BD TOPO incluent des sentiers parfois effacés sur le terrain.
+- **Foncier approximatif** : le cadastre est un document fiscal (limites parfois décalées de quelques mètres). Le
+  fichier DGFiP date du 1er janvier 2026. Un terrain privé non clos n'est pas pour autant ouvert à la cueillette :
+  c'est l'accord du propriétaire qui compte.
 - **Toutes les valeurs sont des hypothèses** : poids, seuils et exposants n'ont pas encore été ajustés sur des
   observations.
 
@@ -353,6 +386,8 @@ une station isolée. Le contrôle se relance quand on veut, par exemple en fin d
 | bilan d'eau du sol | `config/config.yaml` | `score.secheresse` |
 | forte pluie qui relance, poussée abîmée | `config/config.yaml` | `score.delai.reset_mm`, `score.delai.damaged_factor` |
 | traitement des zones protégées | `config/config.yaml` | `access.protected.layers.*.factor` |
+| pénalité de pente, chemins | `config/config.yaml` | `foot` (puis `python -m radar pied`) |
+| poids du terrain privé, abords bâtis | `config/config.yaml` | `land.private_factor` (immédiat), `land.built_buffer_m` (puis `python -m radar foncier`) |
 | bornes des classes | `config/config.yaml` | `score.classes` |
 
 Toute modification change la « version du modèle » enregistrée dans le journal : les sorties restent comparables

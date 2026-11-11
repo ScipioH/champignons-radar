@@ -295,12 +295,49 @@ def run(cfg: dict, weather: dict | None, month: int | None = None) -> dict:
         crit.append({"id": "2c", "ok": bad == 0,
                      "detail": f"{int((acc < 0).sum())} cellules hors périmètre (> {mx} min) retirées ; "
                                f"cellules affichées au-delà du périmètre : {bad}"})
+    # Accès à pied : pente forte loin d'une voie -> score atténué (jamais exclu)
+    from radar import foot as F
+    foot_data = F.load(len(t["x"]))
+    if foot_data is None:
+        lines += ["", "⚠️ Accès à pied non calculé (`python -m radar pied`) : pente et chemins non pris en compte."]
+    else:
+        fd, fm = foot_data
+        ff = F.foot_factor(fd["hard_share"], cfg["foot"]["min_factor"])
+        base = np.broadcast_to(np.asarray(acc, dtype=np.float64), ff.shape)
+        acc = np.where(base >= 0, base * ff, base)
+        res["foot"], res["foot_meta"] = fd, fm
+        res["access_factor"] = acc
+        lines += ["", f"Accès à pied : facteur médian {np.median(ff):.2f}, cellules atténuées de plus de 25 % : "
+                      f"{(ff < 0.75).mean():.1%}."]
+    # Foncier : abords bâtis retirés, terrain privé non bâti atténué, public et non cadastré inchangés.
+    # Le facteur foncier est multiplicatif et ≤ 1 : score = score_sans_foncier × facteur, exactement (la carte
+    # recalcule ainsi le score pour un autre poids du privé, sans tout réembarquer).
+    acc_base = acc
+    lf = None
+    from radar import land as Ld
+    land_data = Ld.load(len(t["x"]))
+    if land_data is None:
+        lines += ["⚠️ Foncier non calculé (`python -m radar foncier`) : jardins et terrains privés non pris en compte."]
+    else:
+        ls, lm = land_data
+        lf = Ld.land_factor(ls, cfg["land"]["private_factor"])
+        base = np.broadcast_to(np.asarray(acc, dtype=np.float64), lf.shape)
+        acc = np.where(base >= 0, base * lf, base)
+        res["land"], res["land_meta"] = ls, lm
+        res["access_factor"] = acc
+        lines += [f"Foncier : facteur médian {np.median(lf):.2f} (privé × {cfg['land']['private_factor']}, abords "
+                  f"bâtis × 0) ; cellules majoritairement publiques : {(ls['public'] > 0.5).mean():.1%}."]
     if weather is not None:
         weather_points = weather["points"]
         meteo = meteo_on_cells(weather_points, t["x"], t["y"])
         res["meteo"] = meteo
         if weather.get("dates"):
-            res["final_days"] = final_days(t, weather, scfg, fclasses, gclasses, cfg, month_override, acc)
+            base = final_days(t, weather, scfg, fclasses, gclasses, cfg, month_override, acc_base)
+            if lf is None:
+                res["final_days"] = base
+            else:
+                res["final_days_base"] = base
+                res["final_days"] = {k: [np.where(v >= 0, v * lf, v) for v in days] for k, days in base.items()}
             res["dates"], res["offsets"] = weather["dates"], weather["offsets"]
         lines += ["", "## Score final (classes sur cellules connues et dans le périmètre)"]
         for k, h in hab.items():

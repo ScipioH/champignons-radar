@@ -42,6 +42,34 @@ access:                   # phase 2c (calcul unique : `python -m radar access`)
       pn_coeur: {typename: "patrinat_pn:parc_national", where: {zone: "Cœur"}, factor: 1.0,
                  label: "Cœur du Parc national des Cévennes (cueillette réglementée)"}
 
+foot:                     # accès à pied (calcul unique : `python -m radar pied`), ajouté le 2026-11-11
+  wfs_url: https://data.geopf.fr/wfs/ows
+  typename: "BDTOPO_V3:troncon_de_route"   # routes, chemins, sentiers (IGN BD TOPO, Licence Ouverte 2.0)
+  exclude_natures: ["Type autoroutier", "Bretelle", "Bac ou liaison maritime"]   # n'ouvrent pas l'accès à pied
+  tile_km: 10
+  count: 5000             # entités max par requête (au-delà, la dalle est découpée)
+  pause_seconds: 0.5
+  cache_dir: data/raw/paths
+  # Hypothèses à confronter aux sorties (pente à la maille de 50 m, donc lissée). Réglées le 2026-11-11 : dans une
+  # vallée cévenole raide, la 1re règle (raide ET à > 100 m d'une voie) ne pénalisait que 8 % du terrain, car
+  # presque tout est à < 100 m d'un chemin IGN.
+  flat_deg: 15            # pente sans gêne
+  steep_deg: 30           # pente pleinement difficile hors sentier (difficulté linéaire entre les deux)
+  near_m: 50              # bord immédiat d'une voie : difficulté × near_relief (on y prospecte une bande)
+  near_relief: 0.5
+  far_m: 1000             # au-delà de 1 km de toute voie : difficile même sur terrain doux
+  min_factor: 0.5         # cellule entièrement difficile : score × 0,5 (pas d'exclusion)
+
+land:                     # foncier (calcul unique : `python -m radar foncier`), ajouté le 2026-11-11
+  dir: data/raw/proprietes          # cadastre Etalab + fichiers DGFiP des personnes morales (voir SOURCES.md)
+  owners_glob: "pm_*.zip"
+  departements: ["34", "30"]
+  public_groups: ["1", "2", "3", "4", "9"]   # État, région, département, commune, établissement public
+  fine_m: 10
+  built_buffer_m: 30      # abords d'un bâtiment (jardin, cour) : retirés du score
+  private_factor: 0.3     # terrain privé non bâti : score × 0,3 (hypothèse ; 0 = masqué) — email et rapport
+  map_private_factors: [0.3, 0.7]   # choix proposés sur la carte (bouton), la 1re valeur ≈ private_factor
+
 weather:
   api_url: https://api.open-meteo.com/v1/forecast
   past_days: 40           # 30 j d'historique nécessaires au score + 7 j de curseur rétrospectif (+ marge)

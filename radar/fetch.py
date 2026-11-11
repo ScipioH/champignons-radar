@@ -106,7 +106,8 @@ def extract_all(raw_dir: Path) -> list[Path]:
     done = []
     out = raw_dir / "extracted"
     for arc in sorted(raw_dir.rglob("*")):
-        if arc.suffix not in (".7z", ".zip") or "extracted" in arc.parts:
+        # proprietes/ : zips DGFiP multi-départements (~1,7 Go décompressés), lus directement par land.py
+        if arc.suffix not in (".7z", ".zip") or "extracted" in arc.parts or "proprietes" in arc.parts:
             continue
         dest = out / arc.stem
         if dest.exists():

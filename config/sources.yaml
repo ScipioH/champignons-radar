@@ -38,3 +38,31 @@ dem_n44_e004:
   url: https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_N44_00_E004_00_DEM/Copernicus_DSM_COG_10_N44_00_E004_00_DEM.tif
   dest: dem/Copernicus_DSM_COG_10_N44_00_E004_00_DEM.tif
   size: 45405284
+
+# Foncier (`python -m radar foncier`), vérifiés le 2026-11-11. Pas de MD5 publié : taille contrôlée + SHA-256 local.
+# Cadastre Etalab, millésime daté (le dossier « latest » change de contenu chaque trimestre).
+cadastre_d034_parcelles:
+  url: https://cadastre.data.gouv.fr/data/etalab-cadastre/2026-09-01/geojson/departements/34/cadastre-34-parcelles.json.gz
+  dest: proprietes/cadastre-34-parcelles.json.gz
+  size: 193922956
+cadastre_d034_batiments:
+  url: https://cadastre.data.gouv.fr/data/etalab-cadastre/2026-09-01/geojson/departements/34/cadastre-34-batiments.json.gz
+  dest: proprietes/cadastre-34-batiments.json.gz
+  size: 55497548
+cadastre_d030_parcelles:
+  url: https://cadastre.data.gouv.fr/data/etalab-cadastre/2026-09-01/geojson/departements/30/cadastre-30-parcelles.json.gz
+  dest: proprietes/cadastre-30-parcelles.json.gz
+  size: 170678375
+cadastre_d030_batiments:
+  url: https://cadastre.data.gouv.fr/data/etalab-cadastre/2026-09-01/geojson/departements/30/cadastre-30-batiments.json.gz
+  dest: proprietes/cadastre-30-batiments.json.gz
+  size: 40612998
+# DGFiP, fichiers des parcelles des personnes morales, situation 2026 (zips multi-départements, non extraits)
+dgfip_pm_01_30:
+  url: https://data.economie.gouv.fr/api/v2/catalog/datasets/fichiers-des-locaux-et-des-parcelles-des-personnes-morales/attachments/fichiers_des_parcelles_dpts_1_a_30_situation_2026zip
+  dest: proprietes/pm_01_30_2026.zip
+  size: 128380472
+dgfip_pm_31_60:
+  url: https://data.economie.gouv.fr/api/v2/catalog/datasets/fichiers-des-locaux-et-des-parcelles-des-personnes-morales/attachments/fichier_des_parcelles_31_a_60_situation_2026zip
+  dest: proprietes/pm_31_60_2026.zip
+  size: 145720507

@@ -8,9 +8,11 @@ Indice météo de **pousse** (jamais de comestibilité) autour de Montpellier. V
 python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements.txt
 .venv\Scripts\python -m radar check-sources   # Open-Meteo répond ?
-.venv\Scripts\python -m radar fetch           # sources de terrain (~300 Mo, intégrité contrôlée)
+.venv\Scripts\python -m radar fetch           # sources de terrain et cadastre (~1 Go, intégrité contrôlée)
 .venv\Scripts\python -m radar terrain         # grille terrain 250 m -> data/processed
 .venv\Scripts\python -m radar access          # temps de trajet (OSRM) + zones protégées, une fois
+.venv\Scripts\python -m radar pied            # pente + distance aux chemins IGN, une fois
+.venv\Scripts\python -m radar foncier         # terrain public / privé / abords bâtis (cadastre), une fois
 .venv\Scripts\python -m radar score           # météo + habitat -> score final J-7..J+7, carte web/index.html
 .venv\Scripts\python -m radar report [--send] # créneaux + meilleures zones : texte, carte, PDF, email
 .venv\Scripts\python -m radar controle-pluie  # pluie des modèles vs stations Météo-France (90 j) -> data/out

@@ -78,7 +78,8 @@ def test_source_inconnue(tmp_path):
 
 def test_registre_reel_coherent():
     src = fetch.load_sources()
-    assert len(src) == 8  # 2 BD Forêt + 2 géologie + 4 tuiles MNT
+    assert len(src) == 14  # 2 BD Forêt + 2 géologie + 4 tuiles MNT + 4 cadastre + 2 DGFiP
+    assert all(s["dest"].startswith("proprietes/") for n, s in src.items() if n.startswith(("cadastre", "dgfip")))
     for name, s in src.items():
         assert s["url"].startswith("https://"), name  # pas de HTTP en clair
         assert s["size"] > 0 and s["dest"], name

@@ -92,9 +92,16 @@ def cmd_score(args: argparse.Namespace) -> int:
     print(res["report"])
     scfg = res["scfg"]
     layers = {}
+    # avec le foncier, la carte reçoit le score SANS facteur foncier et l'applique selon le poids du privé choisi
+    days_vals = res.get("final_days_base", res["final_days"])
     for k, fam in scfg["families"].items():
         layers[f"final_{k}"] = {"label": f"Score — {fam['label']}", "kind": "final",
-                                "values": [v / 100.0 for v in res["final_days"][k]]}
+                                "values": [v / 100.0 for v in days_vals[k]]}
+    land_map = None
+    if "final_days_base" in res:
+        ls = res["land"]
+        land_map = {"open": ls["public"] + ls["non_cadastre"], "priv": ls["prive"],
+                    "factors": cfg["land"]["map_private_factors"], "default": cfg["land"]["private_factor"]}
     for k, fam in scfg["families"].items():
         layers[f"hab_{k}"] = {"label": f"Habitat — {fam['label']}", "kind": "habitat", "values": [res["hab"][k]]}
     if "access" in res:
@@ -107,10 +114,21 @@ def cmd_score(args: argparse.Namespace) -> int:
         reg = a["protected"][:, f >= 1].sum(axis=1)
         layers["protect"] = {"label": "Zones protégées", "kind": "protect",
                              "values": [np.where(excl >= 0.5, 1.0, np.where(reg >= 0.5, 0.5, 0.0))]}
+    if "foot" in res:
+        fd, fp = res["foot"], res["foot_meta"]["params"]
+        layers["foot"] = {"label": "Accès à pied difficile (pente, éloignement des chemins)",
+                          "kind": "foot", "values": [fd["hard_share"]]}
+        cap = 2.0 * fp["far_m"]
+        layers["path_dist"] = {"label": "Distance moyenne à un chemin", "kind": "dist",
+                               "values": [fd["path_dist_m"]], "scale": cap}
+    if "land" in res:
+        ls = res["land"]
+        layers["land_public"] = {"label": "Terrain public (État, communes…)", "kind": "public", "values": [ls["public"]]}
+        layers["land_built"] = {"label": "Abords bâtis (maisons, jardins)", "kind": "built", "values": [ls["bati"]]}
     idx, bounds = rastermap.display_grid(res["t"], res["meta"]["grid"])
     days = [{"offset": o, "date": d} for o, d in zip(result["offsets"], result["dates"])]
     html = rastermap.write(resolve("web/index.html"), layers=layers, idx=idx, bounds=bounds, points=result["points"],
-                           days=days, center=(c["lat"], c["lon"]), classes=cfg["score"]["classes"],
+                           days=days, center=(c["lat"], c["lon"]), classes=cfg["score"]["classes"], land=land_map,
                            warning=(f"Open-Meteo injoignable : météo du {result['stale']}, pas d'aujourd'hui "
                                     f"(J = {result['stale']}).") if result.get("stale") else None)
     print(f"\nCarte : {html}")
@@ -228,6 +246,22 @@ def cmd_access(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pied(args: argparse.Namespace) -> int:
+    from radar import foot
+
+    print(foot.run(load_config(args.config), refresh=args.refresh))
+    print("\nSorties : data/processed/foot_250m.npz, foot_meta.json, foot_report.txt")
+    return 0
+
+
+def cmd_foncier(args: argparse.Namespace) -> int:
+    from radar import land
+
+    print(land.run(load_config(args.config)))
+    print("\nSorties : data/processed/land_250m.npz, land_meta.json, land_report.txt")
+    return 0
+
+
 def cmd_terrain(args: argparse.Namespace) -> int:
     from radar import terrain
 
@@ -261,6 +295,11 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(func=cmd_journal)
     p = sub.add_parser("access", help="temps de trajet réels (OSRM) + zones protégées -> data/processed (une fois)")
     p.set_defaults(func=cmd_access)
+    p = sub.add_parser("pied", help="accès à pied : pente et distance aux chemins (IGN) -> data/processed (une fois)")
+    p.add_argument("--refresh", action="store_true", help="retélécharger les voies même si elles sont en cache")
+    p.set_defaults(func=cmd_pied)
+    p = sub.add_parser("foncier", help="terrain public / privé / abords bâtis (cadastre, DGFiP) -> data/processed (une fois)")
+    p.set_defaults(func=cmd_foncier)
     p = sub.add_parser("score", help="météo + habitat 250 m -> score final et carte web/index.html")
     p.add_argument("--month", type=int, default=0, help="mois simulé (saison/exposition), défaut : mois courant")
     p.set_defaults(func=cmd_score)

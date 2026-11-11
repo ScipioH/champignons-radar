@@ -176,10 +176,16 @@ Plan de validation : pour chaque station de la zone avec RR/TN renseignés, comp
   - repli hors ligne : si Open-Meteo est injoignable, dernière météo en cache + avertissement sur la carte (constaté : le lancement local échouait sur une panne passagère ; la CI, elle, passait).
   - Constat : une nouvelle pluie déclenchante remet le délai à zéro (chute du score les 4-8/11 malgré la poussée en cours) → piste A8.
 - [x] A8, enchaînement des pluies (2026-11-08, validé par l'utilisateur) : pluie < 50 mm/2 j pendant une poussée active → prolongation (montée depuis le début, déclin depuis la dernière pluie) ; pluie ≥ 50 mm → nouvelle poussée, l'ancienne « abîmée » garde 0,5 × son score météo si c'est mieux. Constat : à 0,5, effet proche du plancher existant (≈ 40 vs 42 les 4-8/11) ; la prolongation, elle, ajoute des zones « bon » les 9-11/11.
+- [x] Accès à pied et foncier (2026-11-11, demandé par l'utilisateur après une sortie en versants raides et
+  terrains privés) :
+  - `python -m radar pied` : pente 50 m (Copernicus) + distance aux voies BD TOPO (WFS, ~545 000 tronçons). Difficulté = rampe 15° → 30°, × 0,5 au bord d'une voie, 1 au-delà de 1 km ; score × (1 − 0,5 × difficulté). Constat : la 1re règle (« raide ET > 100 m d'une voie ») ne pénalisait presque rien, le réseau IGN étant très dense.
+  - `python -m radar foncier` : cadastre Etalab (parcelles, bâtiments) + DGFiP personnes morales. Abords bâtis (< 30 m d'un bâtiment) × 0, public (groupes 1-2-3-4-9 ou forme 7xxx) × 1, non cadastré × 1, privé × `private_factor`. Périmètre : public 17 %, privé 68 %, bâti 10 %. Les meilleurs habitats à cèpes et girolles sont privés à ~91 % (lactaires 57 %).
+  - Choix de l'utilisateur : pouvoir **alterner 0,3 / 0,7** pour le privé → bouton sur la carte (score embarqué sans foncier, facteur appliqué dans la page) ; email à `private_factor` = 0,3.
+  - CI : résultats mis en cache (données publiques) ; recalcul (~1 Go de téléchargement) seulement si le code ou la config change.
 - [ ] **Calibration** (≥ 20 sorties, bredouilles comprises) ← **prochaine étape : en attente des sorties**
 - [ ] Mise en service de l'envoi quotidien : créer les secrets GitHub (cf. `.env.example`).
 
-**Commandes :** `python -m radar score` (carte finale `web/index.html`) · `python -m radar report` · `python -m radar controle-pluie` · `python -m radar journal` · `python -m radar v0` (météo seule, `web/v0.html`) · `python -m radar check-sources` · `python -m radar fetch` · `python -m radar terrain` · `.venv\Scripts\python -m pytest`
+**Commandes :** `python -m radar score` (carte finale `web/index.html`) · `python -m radar report` · `python -m radar pied` · `python -m radar foncier` · `python -m radar controle-pluie` · `python -m radar journal` · `python -m radar v0` (météo seule, `web/v0.html`) · `python -m radar check-sources` · `python -m radar fetch` · `python -m radar terrain` · `.venv\Scripts\python -m pytest`
 
 **Constats du run V0 (2026-11-02) :**
 - 93 % des points sont « bon » ou « très bon » : la météo est quasi uniforme sur la zone (même épisode pluvieux ~19-20/10, délai 13-14 j). La V0 ne discrimine donc presque pas ; c'est attendu, la discrimination viendra de l'habitat (2b).

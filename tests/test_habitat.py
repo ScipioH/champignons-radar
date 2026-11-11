@@ -194,6 +194,15 @@ def test_carte_raster_encodage_et_html(tmp_path):
     import json as _json
     data = _json.loads(html.split("const D = ")[1].split(";\nconst COLORS")[0].replace("<\\/", "</"))
     assert len(data["layers"]["f"]["data"]) == 3 and len(data["layers"]["h"]["data"]) == 1
+    assert data["land"] is None
+    # foncier : parts embarquées, bouton de choix du poids du privé
+    land = {"open": np.array([1.0, 0.5, 0.0, 0.0]), "priv": np.array([0.0, 0.5, 1.0, 0.0]), "factors": [0.3, 0.7],
+            "default": 0.3}
+    html2 = R.build_html(layers=layers, land=land, **kw)
+    d2 = _json.loads(html2.split("const D = ")[1].split(";\nconst COLORS")[0].replace("<\\/", "</"))
+    assert d2["land"]["factors"] == [0.3, 0.7] and d2["land"]["default"] == 0.3
+    px = np.frombuffer(zlib.decompress(base64.b64decode(d2["land"]["priv"])), dtype=np.uint8)
+    assert set(np.unique(px)) <= {0, 50, 100, R.OUTSIDE} and 'name="pf"' in html2
     layers["f"]["values"] = layers["f"]["values"][:2]           # nombre de jours incohérent : refusé
     with pytest.raises(ValueError, match="curseur"):
         R.build_html(layers=layers, **kw)

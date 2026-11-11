@@ -19,6 +19,10 @@ sont classées par intérêt, avec un effort indicatif.
 - **A8, enchaînement des pluies** (2026-11-08) : une pluie modérée (moins de 50 mm sur 2 jours) pendant une
   poussée la prolonge au lieu de la relancer. Une forte pluie relance une poussée, et l'ancienne, « abîmée », garde
   la moitié de son score. Voir METHODE.md, §1.1.
+- **Accès à pied** (2026-11-11) : la pente (15° → 30°) et l'éloignement des chemins IGN atténuent le score,
+  au pire de moitié. Voir METHODE.md, §5.
+- **Foncier** (2026-11-11) : les abords bâtis (moins de 30 m d'un bâtiment) sont retirés, le terrain privé est
+  atténué (× 0,3), le terrain public (État, communes, établissements publics, d'après la DGFiP) reste entier.
 - **Robustesse** : si Open-Meteo est injoignable, la carte est calculée avec la dernière météo téléchargée, et un
   avertissement rouge l'indique en haut de la carte.
 
@@ -32,7 +36,7 @@ sont classées par intérêt, avec un effort indicatif.
 | A3 | **Pénalité de chaleur** (minimales très élevées combinées à la sécheresse) | Aucune borne haute de température n'existe pour l'instant. Utile surtout pour les girolles en été. | faible |
 | A9 | **Corriger best match en plaine pour J+4..J+10** (facteur mesuré par `controle-pluie`) ou n'afficher ces jours qu'à titre indicatif | Ce modèle sous-estime la pluie d'environ 40 % en plaine. | faible |
 | A6 | **Incertitude des prévisions** (API d'ensemble Open-Meteo) | Afficher « J+5 : bon, mais incertain » au lieu d'un chiffre trompeur. | moyen |
-| A7 | **Mise à jour de la forêt** : surfaces brûlées depuis 2018 (base Prométhée / EFFIS) | BD Forêt date de 2018. Une pinède brûlée y reste « idéale lactaires ». | moyen |
+| A7 | **Mise à jour de la forêt** : surfaces brûlées ou coupées depuis 2018 (masque forêt IGN 2021-2023, disponible sur la Géoplateforme ; ou Prométhée / EFFIS) | BD Forêt date de 2018. Une pinède brûlée y reste « idéale lactaires ». | moyen |
 
 ## B. Calibrer (dès 20 à 30 sorties)
 

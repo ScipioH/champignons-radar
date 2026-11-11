@@ -92,7 +92,8 @@ TEMPLATE = """<!doctype html>
 = hypothèses). Respecter la vigilance Météo-France, la chasse, les propriétés privées et la réglementation locale.
 Calcul du __DATE__ ; météo en maille 5 km, lissée (pas plus précise à 250 m). Habitat 2018 (BD Forêt).<br>
 <small>Météo : <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0) · Forêt : IGN BD Forêt V2 ·
-Géologie : BRGM BD Charm-50 · Relief : Copernicus GLO-30 © DLR/Airbus (ESA) · Fond : IGN Géoplateforme / OpenTopoMap</small></div>
+Géologie : BRGM BD Charm-50 · Relief : Copernicus GLO-30 © DLR/Airbus (ESA) · Chemins : IGN BD TOPO ·
+Foncier : cadastre DGFiP / Etalab · Fond : IGN Géoplateforme / OpenTopoMap</small></div>
 <div id="map"></div><div id="legend"></div>
 <div id="time"><div class="row"><button id="prev" title="jour précédent">‹</button>
 <input id="slider" type="range" step="1"><button id="next" title="jour suivant">›</button></div>
@@ -132,23 +133,52 @@ function colorTravel(v) {   // v = minutes / scale x 100
 function colorProtect(v) {  // 50 = réglementé, 100 = exclu par prudence
   return v >= 75 ? [200, 30, 30, 150] : v >= 25 ? [40, 90, 200, 110] : [0, 0, 0, 0];
 }
-const COLORF = {final: colorFinal, habitat: colorHab, travel: colorTravel, protect: colorProtect};
+function colorFoot(v) {     // v = part difficile de la cellule (0-100)
+  return v < 5 ? [0, 0, 0, 0] : [150, 60, 20, Math.round(40 + 1.8 * v)];
+}
+function colorDist(v) {     // v = distance / scale x 100
+  const t = v / 100;
+  return [Math.round(60 + 180*t), Math.round(170 - 110*t), Math.round(90 - 60*t), Math.round(60 + 140*t)];
+}
+function colorPublic(v) {   // v = part publique de la cellule (0-100)
+  return v < 5 ? [0, 0, 0, 0] : [30, 140, 60, Math.round(40 + 1.7 * v)];
+}
+function colorBuilt(v) {    // v = part en abords bâtis (0-100)
+  return v < 5 ? [0, 0, 0, 0] : [110, 60, 140, Math.round(40 + 1.7 * v)];
+}
+const COLORF = {final: colorFinal, habitat: colorHab, travel: colorTravel, protect: colorProtect, foot: colorFoot,
+                dist: colorDist, public: colorPublic, built: colorBuilt};
 function fmt(k, v) {
   const l = D.layers[k];
   if (l.kind === 'final') return v + ' (' + classOf(v) + ')';
   if (l.kind === 'travel') return Math.round(v / 100 * l.scale) + ' min';
+  if (l.kind === 'public' || l.kind === 'built') return v + ' % de la cellule';
+  if (l.kind === 'foot') return v + ' % (score × ' + (1 - v / 200).toFixed(2).replace('.', ',') + ')';
+  if (l.kind === 'dist') return v >= 100 ? '> ' + Math.round(l.scale) + ' m' : '~' + Math.round(v / 100 * l.scale / 10) * 10 + ' m';
   if (l.kind === 'protect') return v >= 75 ? 'zone protégée (exclue par prudence)' : v >= 25 ? 'cueillette réglementée' : 'non';
   return (v / 100).toFixed(2);
 }
 const dayOf = name => D.layers[name].data.length > 1 ? day : 0;   // l'habitat ne dépend pas du jour
-const VALUES = {}, URLS = {};
+const RAW = {}, VALUES = {}, URLS = {}, LAND = {};
+// Foncier : les scores embarqués sont sans facteur foncier ; affiché = score × (public + non cadastré + PF × privé)
+let PF = D.land ? D.land.default : null;
+const pfKey = name => (D.land && D.layers[name].kind === 'final') ? '|' + PF : '';
+async function landPart(k) { return LAND[k] || (LAND[k] = await inflate(D.land[k])); }
 async function values(name, d) {
-  const key = name + '|' + d;
-  if (!VALUES[key]) VALUES[key] = await inflate(D.layers[name].data[d]);
-  return VALUES[key];
+  const key = name + '|' + d + pfKey(name);
+  if (VALUES[key]) return VALUES[key];
+  const rk = name + '|' + d;
+  const raw = RAW[rk] || (RAW[rk] = await inflate(D.layers[name].data[d]));
+  if (!pfKey(name)) return VALUES[key] = raw;
+  const o = await landPart('open'), p = await landPart('priv'), out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) {
+    const v = raw[i];
+    out[i] = v >= 254 ? v : Math.round(v * Math.min(1, (o[i] + PF * p[i]) / 100));
+  }
+  return VALUES[key] = out;
 }
 async function url(name, d) {
-  const key = name + '|' + d;
+  const key = name + '|' + d + pfKey(name);
   if (URLS[key]) return URLS[key];
   const vals = await values(name, d);
   const cv = document.createElement('canvas'); cv.width = D.nx; cv.height = D.ny;
@@ -167,6 +197,10 @@ function legend(kind) {
     habitat: '<b>Habitat (0-1)</b> <small>(indépendant du jour)</small><br><i style="background:#dce48a"></i>faible<br><i style="background:#14501e"></i>fort',
     travel: '<b>Temps de trajet</b><br><i style="background:#28b4c8"></i>court<br><i style="background:#f0782a"></i>~ limite',
     protect: '<b>Zones protégées</b><br><i style="background:#c81e1e"></i>exclue par prudence (règlement à vérifier)<br><i style="background:#285ac8"></i>cueillette réglementée',
+    foot: '<b>Accès à pied difficile</b><br><small>pente (15° → 30°), un peu moins au bord des chemins ; score atténué jusqu\\'à ×0,5</small><br><i style="background:#c8a080"></i>un peu<br><i style="background:#963c14"></i>très raide',
+    dist: '<b>Distance à un chemin</b> <small>(route, piste, sentier IGN)</small><br><i style="background:#3caa5a"></i>proche<br><i style="background:#f03c1e"></i>loin',
+    public: '<b>Terrain public</b> <small>(cadastre + DGFiP : État, région, département, communes, établissements publics)</small><br><i style="background:#1e8c3c"></i>part publique de la cellule<br><small>Le reste est privé (score atténué) ou bâti (retiré). Limites à vérifier sur place.</small>',
+    built: '<b>Abords bâtis</b> <small>(à moins de 30 m d\\'un bâtiment : maisons, jardins)</small><br><i style="background:#6e3c8c"></i>part de la cellule, retirée du score',
   }[kind];
   h += '<br><i style="background:#787878"></i>inconnu (hors Gard/Hérault)<br><small>Clic : valeurs de la cellule</small>';
   document.getElementById('legend').innerHTML = h;
@@ -221,6 +255,21 @@ async function refresh() {
     markers.push([m, p]); m.addTo(pts);
   }
   L.control.layers(byLabel, {'Points météo (5 km)': pts}, {collapsed: false}).addTo(map);
+  if (D.land) {
+    const box = L.control({position: 'topright'});
+    box.onAdd = () => {
+      const div = L.DomUtil.create('div', 'leaflet-bar');
+      div.style.cssText = 'background:#fff;padding:6px 8px;font:12px system-ui,sans-serif';
+      div.innerHTML = '<b>Terrain privé</b> <small>(score ×)</small><br>' + D.land.factors.map(f =>
+        '<label style="margin-right:8px"><input type="radio" name="pf" value="' + f + '"' + (f === PF ? ' checked' : '') +
+        '> ' + String(f).replace('.', ',') + '</label>').join('') +
+        '<br><small>abords bâtis : retirés ; public : ×1</small>';
+      L.DomEvent.disableClickPropagation(div);
+      div.addEventListener('change', e => { PF = +e.target.value; refresh(); });
+      return div;
+    };
+    box.addTo(map);
+  }
   map.on('baselayerchange', async e => {
     for (const n in D.layers) if (D.layers[n].label === e.name) {
       legend(D.layers[n].kind); overlays[n].setUrl(await url(n, dayOf(n)));
@@ -230,7 +279,7 @@ async function refresh() {
     const [[s_, w], [n, ea]] = D.bounds;
     const i = Math.floor((n - e.latlng.lat) / (n - s_) * D.ny), j = Math.floor((e.latlng.lng - w) / (ea - w) * D.nx);
     if (i < 0 || j < 0 || i >= D.ny || j >= D.nx) return;
-    const rows = ['<b>' + dayText(day) + '</b>'];
+    const rows = ['<b>' + dayText(day) + '</b>' + (D.land ? ' <small>(terrain privé × ' + String(PF).replace('.', ',') + ')</small>' : '')];
     for (const k of Object.keys(D.layers)) {
       const v = (await values(k, dayOf(k)))[i * D.nx + j];
       rows.push(D.layers[k].label + ' : ' + (v === 255 ? 'hors périmètre' : v === 254 ? 'inconnu' : fmt(k, v)));
@@ -244,10 +293,13 @@ async function refresh() {
 
 
 def build_html(layers: dict, idx: np.ndarray, bounds, points: list[dict], days: list[dict],
-               center: tuple[float, float], classes: dict, warning: str | None = None) -> str:
+               center: tuple[float, float], classes: dict, warning: str | None = None,
+               land: dict | None = None) -> str:
     """layers : nom -> {label, kind ('final'|'habitat'), values : liste de tableaux 0-1 (NaN = inconnu)}.
 
     Les couches 'final' ont une valeur par jour de `days` ({offset, date}) ; l'habitat, une seule.
+    land : {open, priv (parts 0-1 par cellule), factors, default} -> les couches 'final' sont SANS foncier et la
+    page affiche score × (open + f × priv), f choisi par un bouton parmi `factors`.
     """
     for n, l in layers.items():
         if len(l["values"]) not in (1, len(days)):
@@ -259,6 +311,10 @@ def build_html(layers: dict, idx: np.ndarray, bounds, points: list[dict], days: 
         "layers": {n: {"label": l["label"], "kind": l["kind"], "scale": l.get("scale", 1.0),
                        "data": [pack(encode_values(v, l.get("scale", 1.0)), idx) for v in l["values"]]}
                    for n, l in layers.items()},
+        "land": None if land is None else {
+            "factors": [float(f) for f in land["factors"]], "default": float(land["default"]),
+            "open": pack(encode_values(np.asarray(land["open"], dtype=np.float64)), idx),
+            "priv": pack(encode_values(np.asarray(land["priv"], dtype=np.float64)), idx)},
     }
     warn = ""
     if warning:

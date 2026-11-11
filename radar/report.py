@@ -30,7 +30,8 @@ IGN_TILE = ("https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0
             "&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/png")
 ATTRIBUTIONS = ("Météo : Open-Meteo.com (CC BY 4.0). Forêt : © IGN BD Forêt V2. Géologie : © BRGM BD Charm-50. "
                 "Relief : © ESA/Copernicus GLO-30. Trajets : © OpenStreetMap contributors, OSRM. "
-                "Zones protégées : PatriNat (OFB/MNHN), Géoplateforme IGN. Fond de carte : © IGN Plan IGN.")
+                "Zones protégées : PatriNat (OFB/MNHN), Géoplateforme IGN. Chemins : © IGN BD TOPO. "
+                "Foncier : cadastre © DGFiP / Etalab. Fond de carte : © IGN Plan IGN.")
 WARNINGS = [
     "Indice de POUSSE, jamais de comestibilité : ne consommez rien sans identification certaine (pharmacien, "
     "société mycologique). En cas de doute, ne pas consommer.",
@@ -68,7 +69,12 @@ def describe_cell(res: dict, i: int) -> dict:
          "alt": None if np.isnan(t["alt"][i]) else int(round(float(t["alt"][i]))),
          "foret": f"{meta['forest_classes'][fk].replace('_', ' ')} {int(fp[fk])} %",
          "sol": f"{meta['geol_classes'][gk]} {int(gp[gk])} %",
-         "trajet": None, "reglemente": False}
+         "trajet": None, "reglemente": False, "pied_difficile": None, "public": None}
+    if "land" in res:
+        d["public"] = int(round(100 * float(res["land"]["public"][i])))
+    if "foot" in res:
+        h = float(res["foot"]["hard_share"][i])
+        d["pied_difficile"] = None if np.isnan(h) else int(round(100 * h))
     if "access" in res:
         a, am = res["access"], res["access_meta"]
         d["trajet"] = int(round(float(a["travel_min"][i])))
@@ -140,7 +146,21 @@ def zone_line(n: int, z: dict) -> str:
         parts.append(f"~{z['trajet']} min de trajet")
     if z["reglemente"]:
         parts.append("cœur du Parc national : cueillette réglementée")
+    for note in (land_note(z), foot_note(z)):
+        if note:
+            parts.append(note)
     return " · ".join(parts)
+
+
+def land_note(z: dict) -> str | None:
+    p = z.get("public")
+    return None if p is None else f"terrain public {p} %"
+
+
+def foot_note(z: dict) -> str | None:
+    """Mention si la zone est notablement raide (difficulté d'accès à pied ≥ 25 %)."""
+    p = z.get("pied_difficile")
+    return f"pentes fortes : accès à pied difficile ({p} %)" if p is not None and p >= 25 else None
 
 
 def summary_line(rep: dict, cfg: dict) -> str:
@@ -187,7 +207,8 @@ def to_html(rep: dict, cfg: dict, with_image: bool) -> str:
                 extra = [x for x in (f"{z['alt']} m" if z["alt"] is not None else None,
                                      f"forêt : {z['foret']}", f"sol : {z['sol']}",
                                      f"~{z['trajet']} min" if z["trajet"] is not None else None,
-                                     "cœur du Parc : cueillette réglementée" if z["reglemente"] else None) if x]
+                                     "cœur du Parc : cueillette réglementée" if z["reglemente"] else None,
+                                     land_note(z), foot_note(z)) if x]
                 out.append(f'<li><span style="background:{col};padding:0 6px;border-radius:3px">{z["score"]} '
                            f'{e(z["classe"])}</span> <a href="{osm_link(z["lat"], z["lon"])}">'
                            f'{z["lat"]:.4f}, {z["lon"]:.4f}</a> — {e(" · ".join(extra))}</li>')

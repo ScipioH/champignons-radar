@@ -26,7 +26,7 @@ concurrency:
 jobs:
   report:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 50
     env:
       SMTP_HOST: ${{ secrets.SMTP_HOST }}
       SMTP_PORT: ${{ secrets.SMTP_PORT }}
@@ -61,6 +61,24 @@ jobs:
         run: |
           python -m radar fetch > /dev/null
           python -m radar terrain > /dev/null
+
+      - name: Cache accès à pied et foncier (données publiques uniquement)
+        id: foncier
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/processed/foot_250m.npz
+            data/processed/foot_meta.json
+            data/processed/land_250m.npz
+            data/processed/land_meta.json
+          key: foncier-v1-${{ hashFiles('config/sources.yaml', 'radar/foot.py', 'radar/land.py', 'radar/terrain.py') }}-${{ hashFiles('config/config.yaml') }}
+
+      - name: Accès à pied et foncier (téléchargement ~1 Go + calcul, si pas en cache)
+        if: steps.foncier.outputs.cache-hit != 'true'
+        run: |
+          python -m radar fetch > /dev/null
+          python -m radar pied > /dev/null
+          python -m radar foncier > /dev/null
 
       - name: Temps de trajet et zones protégées
         run: python -m radar access > /dev/null 2>&1
