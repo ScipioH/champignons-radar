@@ -91,21 +91,39 @@ def test_retente_sur_coupure_reseau_et_5xx(monkeypatch):
         weather._http_get_json("https://x", 2)
 
 
-def test_certificat_refuse_echoue_tout_de_suite(monkeypatch):
+def _cert_err():
     import ssl
-    import urllib.error
-    calls = []
     err = ssl.SSLCertVerificationError(1, "certificate verify failed")
     err.verify_message = "certificate has expired"
+    return err
 
-    def refuse(req, timeout):
-        calls.append(1)
-        raise urllib.error.URLError(err)
+
+def test_certificat_refuse_echoue_tout_de_suite(monkeypatch):
+    import urllib.error
+    calls = []
+
+    def refuse(req, timeout, **kw):
+        calls.append(kw.get("context"))
+        raise urllib.error.URLError(_cert_err())
     monkeypatch.setattr(weather.urllib.request, "urlopen", refuse)
     monkeypatch.setattr(weather.time, "sleep", lambda s: pytest.fail("pas d'attente sur un certificat refusé"))
-    with pytest.raises(RuntimeError, match="certificate has expired.*antivirus"):
+    with pytest.raises(RuntimeError, match="certificate has expired.*certifi.*antivirus"):
         weather._http_get_json("https://x", 4)
-    assert len(calls) == 1
+    # 1 essai avec le magasin du système, 1 avec certifi, puis abandon (pas de retentatives inutiles)
+    assert len(calls) == 2 and calls[0] is None and calls[1] is not None
+
+
+def test_certificat_refuse_par_windows_accepte_par_certifi(monkeypatch):
+    import io
+    import urllib.error
+
+    def fake(req, timeout, **kw):
+        if "context" not in kw:            # magasin Windows : copie périmée d'un intermédiaire (cas du 2026-11-14)
+            raise urllib.error.URLError(_cert_err())
+        assert kw["context"].verify_mode == 2 and kw["context"].check_hostname   # vérification complète
+        return io.BytesIO(b'{"ok": true}')
+    monkeypatch.setattr(weather.urllib.request, "urlopen", fake)
+    assert weather._http_get_json("https://x", 4) == {"ok": True}
 
 
 def test_reponse_incoherente(monkeypatch, wcfg):

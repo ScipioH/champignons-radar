@@ -23,6 +23,12 @@ sont dans `config/sources.yaml` ; les SHA-256 réels des fichiers téléchargés
   échoue tout de suite avec un message explicite et la carte utilise la dernière météo en cache. Solution : exclure
   `*.open-meteo.com` (et `data.gouv.fr`, `meteofrance.s3.sbg.io.cloud.ovh.net`) de l'analyse HTTPS de l'antivirus.
   Ne jamais désactiver la vérification des certificats dans le code. La CI GitHub n'est pas concernée.
+- **Copie périmée d'un certificat intermédiaire dans Windows** (constaté le 2026-11-14) : la vraie chaîne Let's Encrypt
+  d'Open-Meteo (YE2 → Root YE → ISRG Root X2 → ISRG Root X1) était refusée (« certificate has expired »). En cause, le
+  magasin « Autorités intermédiaires » de l'utilisateur contient un ancien « ISRG Root X2 » émis par X1, expiré le
+  15/09/2025 (empreinte 151682F5…9A53), retenu à la place du bon. Le programme réessaie alors avec la liste de
+  certificats `certifi` : vérification complète, sans dépendre du magasin Windows. Solution définitive côté PC :
+  supprimer ce certificat expiré (certmgr.msc).
 
 - **Propriétaires** : le fichier DGFiP ne recense que les personnes morales (sociétés, collectivités…), pas les
   particuliers. Une parcelle est publique si son propriétaire est dans les groupes 1 (État), 2 (région),

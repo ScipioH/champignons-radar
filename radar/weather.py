@@ -33,12 +33,22 @@ def _key(lat: float, lon: float) -> str:
     return f"{lat:.4f},{lon:.4f}"
 
 
+def _certifi_context() -> ssl.SSLContext | None:
+    """Contexte TLS sur la liste de certificats racines certifi (vérification complète), ou None si absente."""
+    try:
+        import certifi
+    except ImportError:
+        return None
+    return ssl.create_default_context(cafile=certifi.where())
+
+
 def _http_get_json(url: str, max_retries: int) -> object:
     delay = 5.0
+    ctx: ssl.SSLContext | None = None   # None = magasin du système (Windows) ; sinon certifi
     for attempt in range(max_retries + 1):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "champignons-radar/0.1 (usage personnel)"})
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=60, **({"context": ctx} if ctx else {})) as resp:
                 return json.load(resp)
         except urllib.error.HTTPError as e:
             # 429 (quota/minute) et 5xx (serveur) : passagers, on retente ; 4xx : erreur de requête, on remonte
@@ -51,12 +61,20 @@ def _http_get_json(url: str, max_retries: int) -> object:
             raise RuntimeError(f"Open-Meteo HTTP {e.code}: {body}") from e
         except urllib.error.URLError as e:
             if isinstance(e.reason, ssl.SSLCertVerificationError):
-                # réessayer n'y change rien. Cause constatée le 2026-11-11 : antivirus qui intercepte le HTTPS
-                # (certificats ré-signés « Avast Web/Mail Shield ») et présente par moments un certificat expiré
+                # Causes constatées sur le PC local :
+                # - 2026-11-11 : antivirus qui ré-signe le HTTPS (« Avast Web/Mail Shield »), certificat expiré ;
+                # - 2026-11-14 : vraie chaîne Let's Encrypt valide, mais le magasin Windows contient une ancienne
+                #   copie périmée (09/2025) de « ISRG Root X2 » émise par X1, choisie à la place de la bonne.
+                # Le 2e cas se contourne en vérifiant avec la liste certifi (vérification toujours complète).
+                if ctx is None and (alt := _certifi_context()) is not None:
+                    log.warning("certificat refusé avec le magasin Windows (%s) : nouvel essai avec certifi",
+                                e.reason.verify_message)
+                    ctx = alt
+                    continue
                 raise RuntimeError(
-                    f"certificat HTTPS refusé ({e.reason.verify_message}). Cause probable : un antivirus qui "
-                    "analyse les connexions HTTPS (ex. Avast, Agent Web) ; exclure *.open-meteo.com de cette "
-                    "analyse, ou vérifier l'heure du PC.") from e
+                    f"certificat HTTPS refusé ({e.reason.verify_message}), y compris avec la liste certifi. "
+                    "Cause probable : un antivirus qui analyse les connexions HTTPS (ex. Avast, Agent Web) ; "
+                    "exclure *.open-meteo.com de cette analyse, ou vérifier l'heure du PC.") from e
             if attempt < max_retries:
                 log.warning("réseau : %s ; nouvelle tentative dans %.0fs", e, delay)
                 time.sleep(delay)
